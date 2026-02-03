@@ -38,3 +38,80 @@ By combining weather data with energy demand data, the pipeline enables detectio
 - Data quality and reliability
 - Automation and reproducibility
 - Technical documentation
+
+---
+
+## Plan
+
+1) Ingestion (Raw Layer)
+
+- Weather ingestion: run OpenWeather pulls on a schedule; store immutable raw JSON.
+- Energy ingestion: run UK National Grid ESO pulls; store immutable raw data.
+- Secrets/config: define how API keys and endpoints are managed (env vars, config files).
+
+2) Silver Layer (Cleaning / Standardization)
+
+- Data cleaning: normalise schemas, parse timestamps, handle missing fields.
+- Deduplication: apply deterministic deduping rules.
+- Partitioning strategy: define dt partitioning for query performance.
+
+3) Gold Layer (Analytics / Features)
+
+- Weather–demand join: define keying strategy (timestamp + location).
+- Feature engineering: derive weather sensitivity metrics, rolling stats, etc.
+- Aggregations: align with forecasting or reporting requirements.
+
+4) Orchestration & Scheduling
+
+- Workflow orchestration: define the order (ingest → silver → gold).
+- Schedules: document cadence (hourly, daily).
+- Retries & alerting: error handling and failure notifications.
+
+5) Data Quality & Monitoring
+
+- Validation checks: schema validation, anomaly detection.
+- SLAs: data freshness & completeness checks.
+- Observability: logging, metrics, and alerting.
+
+6) Documentation & Usage
+
+- Quickstart: prerequisites, how to run ingestion & transformations.
+- Architecture diagram: refer to the data flow and AWS components.
+- Example analysis: demonstrate a simple demand vs weather sensitivity study.
+
+---
+
+## Quickstart (Local)
+
+1) Install dependencies:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2) Set API keys:
+
+   ```bash
+   export OPENWEATHER_API_KEY="your_openweather_key"
+   export NATIONAL_GRID_API_KEY="your_national_grid_key"
+   ```
+
+3) Configure ingestion:
+
+   - Weather: copy `ingestion/weather/config.example.yaml` to `ingestion/weather/config.yaml` and update your city/units.
+   - Energy: update `ingestion/energy/config.yaml` with the ESO `resource_id` for the dataset you want.
+
+4) Run ingestion (raw layer):
+
+   ```bash
+   python ingestion/weather/fetch_weather.py
+   python ingestion/energy/fetch_energy.py
+   ```
+
+5) Run cleaning (silver layer):
+
+   ```bash
+   python transformations/silver/clean_weather.py
+   ```
+
+6) Continue with gold-layer SQL once your energy schema is finalized.

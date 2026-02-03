@@ -1,9 +1,10 @@
-import requests
-import yaml
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 
+import requests
+import yaml
 
 def load_config():
     """Load API configuration from YAML file."""
@@ -16,9 +17,12 @@ def fetch_weather(config):
     """Fetch current weather data from OpenWeather API."""
     url = f"{config['api']['base_url']}/weather"
 
+    api_key_env = config["api"].get("api_key_env")
+    api_key_value = os.getenv(api_key_env) if api_key_env else None
+
     params = {
         "q": config["api"]["city"],
-        "appid": config["api"]["api_key"],
+        "appid": api_key_value or config["api"].get("api_key", ""),
         "units": config["api"]["units"],
     }
 
