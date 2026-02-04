@@ -1,0 +1,8 @@
+api:
+  base_url: "https://api.nationalgrideso.com/api/3/action"
+  endpoint: "datastore_search"
+  api_key_env: "NATIONAL_GRID_API_KEY"
+  api_key_header: "Ocp-Apim-Subscription-Key"
+  params:
+    resource_id: "REPLACE_WITH_DATASET_RESOURCE_ID"
+    limit: 1000
