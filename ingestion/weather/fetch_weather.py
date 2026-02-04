@@ -1,8 +1,10 @@
-import requests
-import yaml
 import json
+import os
 from datetime import datetime
 from pathlib import Path
+
+import requests
+import yaml
 
 
 def load_config():
@@ -14,15 +16,26 @@ def load_config():
 
 def fetch_weather(config):
     """Fetch current weather data from OpenWeather API."""
-    url = f"{config['api']['base_url']}/weather"
+    api_config = config["api"]
+    base_url = api_config["base_url"].rstrip("/")
+    url = f"{base_url}/weather"
+
+    api_key_env = api_config.get("api_key_env")
+    api_key_value = os.getenv(api_key_env) if api_key_env else None
+    api_key = api_key_value or api_config.get("api_key")
+    if not api_key:
+        raise ValueError(
+            "Missing OpenWeather API key. "
+            "Set OPENWEATHER_API_KEY or provide api.api_key in config.yaml."
+        )
 
     params = {
-        "q": config["api"]["city"],
-        "appid": config["api"]["api_key"],
-        "units": config["api"]["units"],
+        "q": api_config["city"],
+        "appid": api_key,
+        "units": api_config.get("units", "metric"),
     }
 
-    response = requests.get(url, params=params)
+    response = requests.get(url, params=params, timeout=30)
     response.raise_for_status()  # fail fast if API call breaks
 
     return response.json()
