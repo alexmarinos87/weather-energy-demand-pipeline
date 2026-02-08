@@ -1,8 +1,9 @@
 api:
-  base_url: "https://api.nationalgrideso.com/api/3/action"
+  base_url: "https://connecteddata.nationalgrid.co.uk/api/3/action"
   endpoint: "datastore_search"
   api_key_env: "NATIONAL_GRID_API_TOKEN"
   api_key_header: "Authorization"
   params:
-    resource_id: "REPLACE_WITH_DATASET_RESOURCE_ID"
+    # Live Data (NGED) - East Midlands resource
+    resource_id: "92d3431c-15d7-4aa6-ad34-2335596a026c"
     limit: 1000
