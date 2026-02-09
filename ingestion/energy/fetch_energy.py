@@ -34,8 +34,14 @@ def fetch_energy(config: dict) -> dict:
     url = f"{base_url}/{endpoint}"
     params = api_config.get("params", {})
     headers = build_headers(api_config)
+    timeout_seconds = api_config.get("timeout_seconds", 30)
 
-    response = requests.get(url, params=params, headers=headers, timeout=30)
+    response = requests.get(
+        url,
+        params=params,
+        headers=headers,
+        timeout=timeout_seconds,
+    )
     response.raise_for_status()
     return response.json()
 

@@ -3,6 +3,7 @@ api:
   endpoint: "datastore_search"
   api_key_env: "NATIONAL_GRID_API_TOKEN"
   api_key_header: "Authorization"
+  timeout_seconds: 30
   params:
     # Live Data (NGED) - East Midlands resource
     resource_id: "92d3431c-15d7-4aa6-ad34-2335596a026c"
