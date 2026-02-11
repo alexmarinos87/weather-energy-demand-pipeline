@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "weather_current_payload_v1",
+  "description": "Contract for OpenWeather current weather API responses used by raw ingestion.",
+  "type": "object",
+  "required": [
+    "dt",
+    "name",
+    "main",
+    "weather",
+    "wind",
+    "clouds",
+    "cod"
+  ],
+  "properties": {
+    "dt": {
+      "type": "integer"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cod": {
+      "type": "integer"
+    },
+    "main": {
+      "type": "object",
+      "required": [
+        "temp",
+        "feels_like",
+        "humidity"
+      ],
+      "properties": {
+        "temp": {
+          "type": "number"
+        },
+        "feels_like": {
+          "type": "number"
+        },
+        "humidity": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": true
+    },
+    "weather": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "main",
+          "description"
+        ],
+        "properties": {
+          "main": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "wind": {
+      "type": "object",
+      "required": [
+        "speed"
+      ],
+      "properties": {
+        "speed": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": true
+    },
+    "clouds": {
+      "type": "object",
+      "required": [
+        "all"
+      ],
+      "properties": {
+        "all": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

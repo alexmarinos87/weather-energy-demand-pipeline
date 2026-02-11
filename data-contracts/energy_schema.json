@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "nged_datastore_payload_v1",
+  "description": "Contract for NGED datastore_search API responses used by raw ingestion.",
+  "type": "object",
+  "required": [
+    "help",
+    "success",
+    "result"
+  ],
+  "properties": {
+    "help": {
+      "type": "string"
+    },
+    "success": {
+      "type": "boolean",
+      "const": true
+    },
+    "result": {
+      "type": "object",
+      "required": [
+        "resource_id",
+        "records",
+        "limit",
+        "total"
+      ],
+      "properties": {
+        "resource_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "_id"
+            ],
+            "properties": {
+              "_id": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

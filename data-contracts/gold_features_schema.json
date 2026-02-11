@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "weather_energy_features_v1",
+  "description": "Draft contract for analytics-ready gold features.",
+  "type": "object",
+  "required": [
+    "event_timestamp_utc",
+    "city",
+    "temperature",
+    "humidity",
+    "demand_mw"
+  ],
+  "properties": {
+    "event_timestamp_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "city": {
+      "type": "string"
+    },
+    "temperature": {
+      "type": "number"
+    },
+    "humidity": {
+      "type": "number"
+    },
+    "demand_mw": {
+      "type": "number"
+    }
+  },
+  "additionalProperties": true
+}
