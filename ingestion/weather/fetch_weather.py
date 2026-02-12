@@ -1,10 +1,19 @@
 import json
 import os
+import sys
 from datetime import datetime
 from pathlib import Path
 
 import requests
 import yaml
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from ingestion.common.contract_validator import validate_payload
+
+WEATHER_CONTRACT_PATH = PROJECT_ROOT / "data-contracts" / "weather_schema.json"
 
 
 def load_config():
@@ -68,6 +77,7 @@ def save_raw_data(data):
 def main():
     config = load_config()
     weather_data = fetch_weather(config)
+    validate_payload(weather_data, WEATHER_CONTRACT_PATH, "weather")
     save_raw_data(weather_data)
 
 

@@ -1,10 +1,19 @@
 import json
 import os
+import sys
 from datetime import datetime
 from pathlib import Path
 
 import requests
 import yaml
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from ingestion.common.contract_validator import validate_payload
+
+ENERGY_CONTRACT_PATH = PROJECT_ROOT / "data-contracts" / "energy_schema.json"
 
 
 def load_config():
@@ -62,6 +71,7 @@ def save_raw_data(data: dict):
 def main():
     config = load_config()
     energy_data = fetch_energy(config)
+    validate_payload(energy_data, ENERGY_CONTRACT_PATH, "energy")
     save_raw_data(energy_data)
 
 
