@@ -89,21 +89,6 @@ Raw outputs are written to:
 - `data/raw/weather/`
 - `data/raw/energy/`
 
-### Quick Win Implemented: Contract Gate on Ingestion
-
-Both ingestion jobs now validate API payloads against versioned contracts before writing raw files:
-
-- `data-contracts/weather_schema.json`
-- `data-contracts/energy_schema.json`
-
-If a payload drifts (missing required fields or invalid types), ingestion fails fast and no raw file is written.
-
-Run tests for this gate:
-
-```bash
-pytest -q
-```
-
 ---
 
 ## Plan (Current)
