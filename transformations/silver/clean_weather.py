@@ -1,7 +1,7 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-import os
+from typing import Any
 
 import pandas as pd
 
@@ -9,58 +9,109 @@ import pandas as pd
 RAW_DIR = Path("data/raw/weather")
 SILVER_DIR = Path("data/silver/weather")
 
+WEATHER_CANONICAL_COLUMNS = [
+    "source_dataset",
+    "source_file",
+    "source_record_id",
+    "event_timestamp_utc",
+    "ingestion_timestamp_utc",
+    "event_date_utc",
+    "city",
+    "country_code",
+    "latitude",
+    "longitude",
+    "temperature_c",
+    "feels_like_c",
+    "humidity_pct",
+    "pressure_hpa",
+    "cloud_cover_pct",
+    "wind_speed_mps",
+    "weather_main",
+    "weather_description",
+]
 
-def extract_fields(raw_json: dict) -> dict:
-    """Flatten and clean fields from raw OpenWeather API response."""
+
+def _parse_ingestion_timestamp(filepath: Path) -> datetime:
+    """Parse ingestion timestamp from filename; fallback to file mtime in UTC."""
+    try:
+        timestamp_text = filepath.stem.split("_", maxsplit=1)[1]
+        parsed = datetime.strptime(timestamp_text, "%Y%m%d_%H%M%S")
+        return parsed.replace(tzinfo=timezone.utc)
+    except (IndexError, ValueError):
+        return datetime.fromtimestamp(filepath.stat().st_mtime, tz=timezone.utc)
+
+
+def _build_record(raw_json: dict[str, Any], source_file: str, ingestion_ts: datetime) -> dict[str, Any]:
+    weather_summary = raw_json.get("weather", [{}])[0] or {}
+    event_ts = pd.to_datetime(raw_json["dt"], unit="s", utc=True)
+
     return {
-        "timestamp_utc": datetime.utcfromtimestamp(raw_json["dt"]).isoformat(),
-        "city": raw_json.get("name", ""),
-        "temperature": raw_json["main"].get("temp"),
-        "feels_like": raw_json["main"].get("feels_like"),
-        "humidity": raw_json["main"].get("humidity"),
-        "wind_speed": raw_json.get("wind", {}).get("speed"),
-        "cloud_cover": raw_json.get("clouds", {}).get("all")
+        "source_dataset": "weather",
+        "source_file": source_file,
+        "source_record_id": raw_json.get("id"),
+        "event_timestamp_utc": event_ts,
+        "ingestion_timestamp_utc": pd.Timestamp(ingestion_ts),
+        "event_date_utc": event_ts.strftime("%Y-%m-%d"),
+        "city": raw_json.get("name"),
+        "country_code": raw_json.get("sys", {}).get("country"),
+        "latitude": raw_json.get("coord", {}).get("lat"),
+        "longitude": raw_json.get("coord", {}).get("lon"),
+        "temperature_c": raw_json.get("main", {}).get("temp"),
+        "feels_like_c": raw_json.get("main", {}).get("feels_like"),
+        "humidity_pct": raw_json.get("main", {}).get("humidity"),
+        "pressure_hpa": raw_json.get("main", {}).get("pressure"),
+        "cloud_cover_pct": raw_json.get("clouds", {}).get("all"),
+        "wind_speed_mps": raw_json.get("wind", {}).get("speed"),
+        "weather_main": weather_summary.get("main"),
+        "weather_description": weather_summary.get("description"),
     }
 
 
-def process_file(filepath: Path) -> dict:
-    """Load raw JSON from a file and extract selected fields."""
-    with open(filepath, "r") as f:
-        raw_data = json.load(f)
-    return extract_fields(raw_data)
+def transform_weather_files(raw_dir: Path = RAW_DIR) -> pd.DataFrame:
+    """Transform weather raw JSON files to canonical silver schema."""
+    records: list[dict[str, Any]] = []
+    for filepath in sorted(raw_dir.glob("*.json")):
+        try:
+            with filepath.open("r") as f:
+                raw_data = json.load(f)
+            records.append(
+                _build_record(
+                    raw_json=raw_data,
+                    source_file=filepath.name,
+                    ingestion_ts=_parse_ingestion_timestamp(filepath),
+                )
+            )
+        except Exception as exc:
+            print(f"Failed to process {filepath.name}: {exc}")
+
+    if not records:
+        return pd.DataFrame(columns=WEATHER_CANONICAL_COLUMNS)
+
+    df = pd.DataFrame(records)[WEATHER_CANONICAL_COLUMNS]
+    df = df.sort_values("ingestion_timestamp_utc")
+    df = df.drop_duplicates(subset=["city", "event_timestamp_utc"], keep="last")
+    return df.reset_index(drop=True)
 
 
-def save_clean_data(df: pd.DataFrame, output_path: Path):
-    """Save cleaned DataFrame to partitioned Silver path."""
+def save_clean_data(df: pd.DataFrame, output_path: Path = SILVER_DIR):
+    """Write silver weather records partitioned by event_date_utc."""
     if df.empty:
-        print("No valid records to write.")
+        print("No valid weather records to write.")
         return
 
-    dt_partition = datetime.utcnow().strftime("dt=%Y-%m-%d")
-    output_dir = output_path / dt_partition
-    output_dir.mkdir(parents=True, exist_ok=True)
+    run_timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    for event_date, partition_df in df.groupby("event_date_utc", sort=True):
+        output_dir = output_path / f"dt={event_date}"
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-    filename = f"weather_clean_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.parquet"
-    df.to_parquet(output_dir / filename, index=False)
-    print(f"Saved cleaned data to {output_dir / filename}")
+        output_file = output_dir / f"weather_clean_{run_timestamp}.parquet"
+        partition_df.to_parquet(output_file, index=False)
+        print(f"Saved cleaned weather data to {output_file}")
 
 
 def main():
-    raw_files = list(RAW_DIR.glob("*.json"))
-    if not raw_files:
-        print("No raw weather data files found.")
-        return
-
-    records = []
-    for file in raw_files:
-        try:
-            record = process_file(file)
-            records.append(record)
-        except Exception as e:
-            print(f"Failed to process {file.name}: {e}")
-
-    df = pd.DataFrame(records)
-    save_clean_data(df, SILVER_DIR)
+    transformed_df = transform_weather_files()
+    save_clean_data(transformed_df)
 
 
 if __name__ == "__main__":
