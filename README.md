@@ -56,18 +56,24 @@ By combining weather data with energy demand data, the pipeline enables detectio
 cp ingestion/weather/config.example.yaml ingestion/weather/config.yaml
 ```
 
-2. Set API keys in `.env`:
+2. Create your energy config:
+
+```bash
+cp ingestion/energy/config.example.yaml ingestion/energy/config.yaml
+```
+
+3. Set API keys in `.env`:
 
 ```
 OPENWEATHER_API_KEY=your_key
 NATIONAL_GRID_API_TOKEN=your_token
 ```
 
-3. Set the energy `resource_id` in `ingestion/energy/config.yaml`.
+4. Set the energy `resource_id` in `ingestion/energy/config.yaml`.
    This repo currently uses the NGED **Live Data** dataset, which is regional.
    Pick one resource (East Midlands, South Wales, South West, West Midlands).
 
-4. Install dependencies:
+5. Install dependencies:
 
 ```bash
 python3 -m pip install -r requirements.txt

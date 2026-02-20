@@ -16,9 +16,15 @@ from ingestion.common.contract_validator import validate_payload
 ENERGY_CONTRACT_PATH = PROJECT_ROOT / "data-contracts" / "energy_schema.json"
 
 
-def load_config():
+def load_config(config_path: Path | None = None):
     """Load API configuration from YAML file."""
-    config_path = Path(__file__).parent / "config.yaml"
+    if config_path is None:
+        config_path = Path(__file__).parent / "config.yaml"
+    if not config_path.exists():
+        template_path = config_path.with_name("config.example.yaml")
+        raise FileNotFoundError(
+            f"Missing {config_path}. Create it from {template_path}."
+        )
     with open(config_path, "r") as f:
         return yaml.safe_load(f)
 
@@ -28,10 +34,15 @@ def build_headers(api_config: dict) -> dict:
     headers = {}
     api_key_env = api_config.get("api_key_env")
     api_key_header = api_config.get("api_key_header")
-    if api_key_env and api_key_header:
+    if api_key_env or api_key_header:
+        if not (api_key_env and api_key_header):
+            raise ValueError(
+                "Both api.api_key_env and api.api_key_header must be set together."
+            )
         api_key_value = os.getenv(api_key_env)
-        if api_key_value:
-            headers[api_key_header] = api_key_value
+        if not api_key_value:
+            raise EnvironmentError(f"Environment variable {api_key_env} is not set.")
+        headers[api_key_header] = api_key_value
     return headers
 
 
