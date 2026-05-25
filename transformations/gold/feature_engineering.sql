@@ -1,9 +1,11 @@
--- Gold Step 1: model-ready features from the weather-demand join.
--- Engine target: Athena/Trino SQL.
--- This view is contract-aligned with required fields:
+-- Gold Step 2: model-ready features from the weather-demand join.
+-- Engine target: Microsoft Fabric Spark SQL.
+-- This table is contract-aligned with required fields:
 --   event_timestamp_utc, city, temperature, humidity, demand_mw
 
-CREATE OR REPLACE VIEW gold.feature_engineering AS
+CREATE OR REPLACE TABLE gold_feature_engineering
+USING DELTA
+AS
 WITH base AS (
     SELECT
         event_timestamp_utc,
@@ -26,7 +28,7 @@ WITH base AS (
         weather_main,
         weather_description,
         weather_age_minutes
-    FROM gold.weather_demand_join
+    FROM gold_weather_demand_join
     WHERE demand_mw IS NOT NULL
       AND city IS NOT NULL
       AND COALESCE(temperature_c, feels_like_c) IS NOT NULL
@@ -54,27 +56,27 @@ features AS (
         weather_main,
         weather_description,
         weather_age_minutes,
-        CAST(extract(hour FROM event_timestamp_utc) AS integer) AS hour_of_day_utc,
-        CAST(day_of_week(event_timestamp_utc) AS integer) AS day_of_week_utc,
+        HOUR(event_timestamp_utc) AS hour_of_day_utc,
+        DAYOFWEEK(event_timestamp_utc) AS day_of_week_utc,
         CASE
-            WHEN day_of_week(event_timestamp_utc) IN (6, 7) THEN 1
+            WHEN DAYOFWEEK(event_timestamp_utc) IN (1, 7) THEN 1
             ELSE 0
         END AS is_weekend_utc,
         temperature * temperature AS temperature_sq,
-        lag(demand_mw, 1) OVER (
+        LAG(demand_mw, 1) OVER (
             PARTITION BY resource_id, city
             ORDER BY event_timestamp_utc
         ) AS demand_lag_1,
-        lag(temperature, 1) OVER (
+        LAG(temperature, 1) OVER (
             PARTITION BY resource_id, city
             ORDER BY event_timestamp_utc
         ) AS temperature_lag_1,
-        avg(demand_mw) OVER (
+        AVG(demand_mw) OVER (
             PARTITION BY resource_id, city
             ORDER BY event_timestamp_utc
             ROWS BETWEEN 11 PRECEDING AND CURRENT ROW
         ) AS demand_rolling_mean_12,
-        avg(temperature) OVER (
+        AVG(temperature) OVER (
             PARTITION BY resource_id, city
             ORDER BY event_timestamp_utc
             ROWS BETWEEN 11 PRECEDING AND CURRENT ROW

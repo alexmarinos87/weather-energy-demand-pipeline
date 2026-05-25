@@ -10,11 +10,11 @@ Additionally, the lack of integrated, near real-time data can create **operation
 
 ## Solution
 
-This project implements a cloud-based data pipeline using **Amazon Web Services (AWS)** to ingest live weather data and electricity demand data, transform it into analytics-ready formats, and produce features suitable for demand analysis and forecasting.
+This project implements a cloud-based data pipeline using **Microsoft Fabric** to ingest live weather data and electricity demand data, transform it into analytics-ready Delta tables, and produce features suitable for demand analysis and forecasting.
 
 The pipeline addresses auditability and traceability challenges by:
 - Automating data ingestion
-- Storing immutable raw data
+- Storing immutable raw data in OneLake
 - Applying version-controlled transformations
 - Producing consistent, reproducible outputs
 
@@ -32,8 +32,8 @@ By combining weather data with energy demand data, the pipeline enables detectio
 ## Skills Demonstrated
 
 - Data engineering fundamentals (API ingestion, layered data modeling)
-- Cloud-native architecture (AWS-based design)
-- SQL and data modeling
+- Cloud-native architecture with Microsoft Fabric, OneLake, Lakehouse, Data Factory, and notebooks
+- SQL, PySpark, and Delta Lake data modeling
 - Domain-aware feature engineering (weather–demand relationships)
 - Data quality and reliability
 - Automation and reproducibility
@@ -41,7 +41,31 @@ By combining weather data with energy demand data, the pipeline enables detectio
 
 ---
 
-## Local Run (Quickstart)
+## Microsoft Fabric Migration
+
+The active cloud target is now Microsoft Fabric.
+
+- Storage: OneLake Lakehouse files and Delta tables
+- Orchestration: Fabric Data Factory pipeline schedule
+- Compute: Fabric notebooks using Spark
+- Serving: Lakehouse SQL analytics endpoint and Power BI-ready gold tables
+- Monitoring: Fabric monitoring hub plus data quality checks written to Delta
+
+Fabric migration assets are in:
+
+- `fabric/README.md`
+- `fabric/notebooks/`
+- `fabric/sql/`
+- `fabric/pipelines/`
+- `architecture/data_flow.md`
+- `orchestration/schedules.md`
+- `monitoring/data_quality_checks.sql`
+
+---
+
+## Local Run (Development Quickstart)
+
+The local Python entry points are retained for development and contract testing. Fabric notebooks are the canonical cloud runtime.
 
 ### Prereqs
 
@@ -112,10 +136,11 @@ pytest -q
 
 ---
 
-## Plan (Current)
+## Fabric Run Order
 
-1. Ingestion: verify API access and stable raw capture.
-2. Silver: implement energy cleaning and align weather schema.
-3. Gold: build join + feature engineering SQL.
-4. Orchestration: wire Step Functions and schedules.
-5. Monitoring: add CloudWatch alarms and data quality checks.
+1. Create a Fabric workspace and Lakehouse named `weather_energy_lakehouse`.
+2. Create a Fabric Environment from `fabric/environment.yml`.
+3. Import the notebook sources in `fabric/notebooks/` and attach the Lakehouse.
+4. Create a Fabric Data Factory pipeline following `fabric/pipelines/weather_energy_demand_pipeline.md`.
+5. Add the SQL endpoint views from `fabric/sql/gold_views_tsql.sql` if analysts need stable SQL view names.
+6. Schedule the pipeline using `orchestration/schedules.md`.
