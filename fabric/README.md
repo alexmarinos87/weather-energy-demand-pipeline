@@ -24,6 +24,11 @@ Raw API captures:
 - `Files/raw/weather/ingestion_date=YYYY-MM-DD/weather_YYYYMMDD_HHMMSS.json`
 - `Files/raw/energy/ingestion_date=YYYY-MM-DD/energy_YYYYMMDD_HHMMSS.json`
 
+Versioned ingestion contracts:
+
+- `Files/data-contracts/weather_schema.json`
+- `Files/data-contracts/energy_schema.json`
+
 Lakehouse tables:
 
 - `silver_weather`
@@ -37,15 +42,16 @@ Lakehouse tables:
 
 1. Create the Lakehouse and Environment in Fabric.
 2. Add the public Python libraries from `fabric/environment.yml` to the Environment.
-3. Import each `.py` file in `fabric/notebooks/` as a Fabric notebook source.
-4. Attach the Lakehouse and Environment to each notebook.
-5. Create a Data Factory pipeline using `fabric/pipelines/weather_energy_demand_pipeline.md`.
-6. Add secure parameters or connection-backed secrets for:
+3. Upload `data-contracts/weather_schema.json` and `data-contracts/energy_schema.json` to `Files/data-contracts/` in the Lakehouse.
+4. Import each `.py` file in `fabric/notebooks/` as a Fabric notebook source.
+5. Attach the Lakehouse and Environment to each notebook.
+6. Create a Data Factory pipeline using `fabric/pipelines/weather_energy_demand_pipeline.md`.
+7. Add secure parameters or connection-backed secrets for:
    - `OPENWEATHER_API_KEY`
    - `NATIONAL_GRID_API_TOKEN`
-7. Run the notebooks in order once manually.
-8. Add SQL endpoint views from `fabric/sql/gold_views_tsql.sql` if stable analyst-facing names are needed.
-9. Enable the schedule from `orchestration/schedules.md`.
+8. Run the notebooks in order once manually.
+9. Add SQL endpoint views from `fabric/sql/gold_views_tsql.sql` if stable analyst-facing names are needed.
+10. Enable the schedule from `orchestration/schedules.md`.
 
 ## Runtime Parameters
 
@@ -59,6 +65,7 @@ Lakehouse tables:
 | `OPENWEATHER_API_KEY` | empty | Secure weather API key |
 | `NATIONAL_GRID_API_TOKEN` | empty | Secure energy API token |
 | `ENERGY_LIMIT` | `1000` | Max records per energy pull |
+| `CONTRACTS_ROOT` | empty | Optional override for the folder containing `weather_schema.json` and `energy_schema.json`; defaults to `Files/data-contracts` |
 
 ## Migration Notes
 

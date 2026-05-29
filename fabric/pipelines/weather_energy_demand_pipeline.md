@@ -12,11 +12,13 @@ Pipeline name: `weather_energy_demand_pipeline`
 | `OPENWEATHER_API_KEY` | Yes | Mark as secure. |
 | `NATIONAL_GRID_API_TOKEN` | Yes | Mark as secure. |
 | `ENERGY_LIMIT` | No | Default `1000`. |
+| `CONTRACTS_ROOT` | No | Override only if contracts are not stored under `Files/data-contracts`. |
 
 ## Activities
 
 1. Notebook activity: `01_ingest_api_to_bronze`
    - Pass all pipeline parameters.
+   - Validate API responses against the versioned JSON contracts before writing raw files.
    - Stop pipeline on failure.
 2. Notebook activity: `02_bronze_to_silver`
    - Depends on ingestion success.

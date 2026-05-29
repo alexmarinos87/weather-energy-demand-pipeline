@@ -8,6 +8,7 @@ This project now targets Microsoft Fabric as the managed analytics platform.
 OpenWeather API             National Grid Connected Data API
        |                                  |
        | Fabric notebook HTTP ingestion   |
+       | with JSON contract validation    |
        v                                  v
 OneLake Lakehouse Files: raw/weather and raw/energy
        |
@@ -32,6 +33,11 @@ Raw files are immutable API captures:
 
 - `Files/raw/weather/ingestion_date=YYYY-MM-DD/weather_YYYYMMDD_HHMMSS.json`
 - `Files/raw/energy/ingestion_date=YYYY-MM-DD/energy_YYYYMMDD_HHMMSS.json`
+
+Bronze ingestion validates API responses against:
+
+- `Files/data-contracts/weather_schema.json`
+- `Files/data-contracts/energy_schema.json`
 
 Silver tables are canonical, typed, and deduplicated:
 

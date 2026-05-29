@@ -5,11 +5,13 @@
 
 import json
 import os
+from functools import lru_cache
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import requests
+from jsonschema import Draft202012Validator
 
 
 DATASET = "all"  # all, weather, or energy
@@ -19,9 +21,14 @@ NATIONAL_GRID_API_TOKEN = ""
 NATIONAL_GRID_RESOURCE_ID = ""
 ENERGY_LIMIT = 1000
 LAKEHOUSE_FILES_ROOT = "/lakehouse/default/Files"
+CONTRACTS_ROOT = ""
 
 OPENWEATHER_BASE_URL = "https://api.openweathermap.org/data/2.5"
 NATIONAL_GRID_BASE_URL = "https://connecteddata.nationalgrid.co.uk/api/3/action"
+CONTRACT_FILENAMES = {
+    "weather": "weather_schema.json",
+    "energy": "energy_schema.json",
+}
 
 
 def _get_parameter(name: str, default: Any) -> Any:
@@ -38,39 +45,88 @@ def _required_secret(value: str, env_name: str) -> str:
     )
 
 
-def _require_path(payload: dict[str, Any], path: list[str], dataset_name: str) -> None:
-    current: Any = payload
-    for key in path:
-        if not isinstance(current, dict) or key not in current:
-            dotted_path = ".".join(path)
-            raise ValueError(f"{dataset_name} payload failed contract: missing {dotted_path}")
-        current = current[key]
+def _unique_paths(paths: list[Path]) -> list[Path]:
+    seen: set[str] = set()
+    unique_paths = []
+    for path in paths:
+        normalized = str(path.expanduser())
+        if normalized not in seen:
+            unique_paths.append(path)
+            seen.add(normalized)
+    return unique_paths
 
 
-def _validate_weather(payload: dict[str, Any]) -> None:
-    for path in [
-        ["dt"],
-        ["name"],
-        ["main", "temp"],
-        ["main", "feels_like"],
-        ["main", "humidity"],
-        ["wind", "speed"],
-        ["clouds", "all"],
-        ["cod"],
-    ]:
-        _require_path(payload, path, "weather")
-    weather_items = payload.get("weather")
-    if not isinstance(weather_items, list) or not weather_items:
-        raise ValueError("weather payload failed contract: weather must be a non-empty array")
+def _candidate_contract_roots() -> list[Path]:
+    configured_root = str(_get_parameter("CONTRACTS_ROOT", CONTRACTS_ROOT)).strip()
+    roots = []
+    if configured_root:
+        roots.append(Path(configured_root))
+
+    files_root = Path(str(_get_parameter("LAKEHOUSE_FILES_ROOT", LAKEHOUSE_FILES_ROOT)))
+    roots.append(files_root / "data-contracts")
+
+    if "__file__" in globals():
+        roots.append(Path(__file__).resolve().parents[2] / "data-contracts")
+
+    roots.extend(
+        [
+            Path.cwd() / "data-contracts",
+            Path.cwd().parent / "data-contracts",
+        ]
+    )
+    return _unique_paths(roots)
 
 
-def _validate_energy(payload: dict[str, Any]) -> None:
-    for path in [["help"], ["success"], ["result"], ["result", "resource_id"], ["result", "records"]]:
-        _require_path(payload, path, "energy")
-    if payload["success"] is not True:
-        raise ValueError("energy payload failed contract: success must be true")
-    if not isinstance(payload["result"]["records"], list):
-        raise ValueError("energy payload failed contract: result.records must be an array")
+def _resolve_contract_path(dataset_name: str) -> Path:
+    contract_filename = CONTRACT_FILENAMES[dataset_name]
+    searched_paths = []
+    for root in _candidate_contract_roots():
+        contract_path = root / contract_filename
+        searched_paths.append(contract_path)
+        if contract_path.exists():
+            return contract_path
+
+    files_root = Path(str(_get_parameter("LAKEHOUSE_FILES_ROOT", LAKEHOUSE_FILES_ROOT)))
+    default_lakehouse_path = files_root / "data-contracts"
+    searched = ", ".join(str(path) for path in searched_paths)
+    raise FileNotFoundError(
+        f"Missing {contract_filename}. Upload data-contracts to "
+        f"{default_lakehouse_path} or set CONTRACTS_ROOT. Searched: {searched}"
+    )
+
+
+@lru_cache(maxsize=8)
+def _get_validator(contract_path: str) -> Draft202012Validator:
+    with Path(contract_path).open("r") as f:
+        schema = json.load(f)
+
+    Draft202012Validator.check_schema(schema)
+    return Draft202012Validator(schema)
+
+
+def _validate_payload(payload: dict[str, Any], dataset_name: str) -> None:
+    contract_path = _resolve_contract_path(dataset_name)
+    validator = _get_validator(str(contract_path.resolve()))
+    errors = sorted(validator.iter_errors(payload), key=lambda err: list(err.absolute_path))
+
+    if not errors:
+        return
+
+    lines = [
+        (
+            f"{dataset_name} payload failed contract "
+            f"{contract_path.name} with {len(errors)} issue(s):"
+        )
+    ]
+
+    for err in errors[:5]:
+        path = ".".join(str(item) for item in err.absolute_path) or "<root>"
+        lines.append(f"- {path}: {err.message}")
+
+    if len(errors) > 5:
+        lines.append(f"- ... {len(errors) - 5} additional issue(s)")
+
+    raise ValueError("\n".join(lines))
 
 
 def _write_raw_json(dataset_name: str, payload: dict[str, Any]) -> str:
@@ -103,7 +159,7 @@ def fetch_weather() -> dict[str, Any]:
     )
     response.raise_for_status()
     payload = response.json()
-    _validate_weather(payload)
+    _validate_payload(payload, "weather")
     return payload
 
 
@@ -124,18 +180,24 @@ def fetch_energy() -> dict[str, Any]:
     )
     response.raise_for_status()
     payload = response.json()
-    _validate_energy(payload)
+    _validate_payload(payload, "energy")
     return payload
 
 
-dataset = str(_get_parameter("DATASET", DATASET)).lower()
-if dataset not in {"all", "weather", "energy"}:
-    raise ValueError("DATASET must be one of: all, weather, energy")
+def main() -> list[str]:
+    dataset = str(_get_parameter("DATASET", DATASET)).lower()
+    if dataset not in {"all", "weather", "energy"}:
+        raise ValueError("DATASET must be one of: all, weather, energy")
 
-written_paths: list[str] = []
-if dataset in {"all", "weather"}:
-    written_paths.append(_write_raw_json("weather", fetch_weather()))
-if dataset in {"all", "energy"}:
-    written_paths.append(_write_raw_json("energy", fetch_energy()))
+    written_paths: list[str] = []
+    if dataset in {"all", "weather"}:
+        written_paths.append(_write_raw_json("weather", fetch_weather()))
+    if dataset in {"all", "energy"}:
+        written_paths.append(_write_raw_json("energy", fetch_energy()))
 
-print(json.dumps({"written_paths": written_paths}, indent=2))
+    print(json.dumps({"written_paths": written_paths}, indent=2))
+    return written_paths
+
+
+if __name__ == "__main__":
+    main()
