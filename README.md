@@ -121,12 +121,14 @@ Raw outputs are written to:
 
 ### Quick Win Implemented: Contract Gate on Ingestion
 
-Both ingestion jobs now validate API payloads against versioned contracts before writing raw files:
+Local and Fabric ingestion jobs now validate API payloads against versioned contracts before writing raw files:
 
 - `data-contracts/weather_schema.json`
 - `data-contracts/energy_schema.json`
 
 If a payload drifts (missing required fields or invalid types), ingestion fails fast and no raw file is written.
+
+For Fabric runs, upload these files to `Files/data-contracts/` in the Lakehouse or pass `CONTRACTS_ROOT` to the ingestion notebook.
 
 Run tests for this gate:
 
