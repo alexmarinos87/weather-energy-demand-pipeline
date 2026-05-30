@@ -5,6 +5,7 @@
 - Review the latest Fabric Data Factory pipeline run status.
 - Query `dq_run_results` for failed checks.
 - Confirm `gold_feature_engineering` contains fresh rows for the expected energy resource.
+- Review freshness warnings for silver and gold tables.
 - Confirm source API failures did not repeat across retries.
 
 ## Useful SQL
@@ -13,6 +14,7 @@
 SELECT TOP (50)
     run_timestamp_utc,
     check_name,
+    severity,
     failed_rows,
     status
 FROM dbo.dq_run_results
@@ -31,4 +33,5 @@ FROM dbo.gold_feature_engineering;
 - Ingestion failures usually mean API credentials, quota, or source availability changed.
 - Silver failures usually mean raw payload shape changed and the contract gate needs review.
 - Gold failures usually mean required silver fields are missing or timestamp alignment has drifted.
+- Freshness warnings usually mean the source API is delayed, the pipeline schedule paused, or no new records matched the expected resource.
 - Data quality failures should be resolved before refreshing downstream reports.

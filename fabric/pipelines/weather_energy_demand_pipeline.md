@@ -13,6 +13,7 @@ Pipeline name: `weather_energy_demand_pipeline`
 | `NATIONAL_GRID_API_TOKEN` | Yes | Mark as secure. |
 | `ENERGY_LIMIT` | No | Default `1000`. |
 | `CONTRACTS_ROOT` | No | Override only if contracts are not stored under `Files/data-contracts`. |
+| `MAX_EXPECTED_DATA_LAG_HOURS` | No | Default `3`; passed to data quality checks as the freshness warning threshold. |
 
 ## Activities
 
@@ -26,6 +27,7 @@ Pipeline name: `weather_energy_demand_pipeline`
    - Depends on silver success.
 4. Notebook activity: `04_data_quality_checks`
    - Depends on gold success.
+   - Pass `MAX_EXPECTED_DATA_LAG_HOURS` when overriding the default freshness threshold.
    - Any raised exception should fail the pipeline.
 
 ## Schedule

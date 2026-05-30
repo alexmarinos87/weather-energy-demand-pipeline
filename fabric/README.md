@@ -66,6 +66,7 @@ Lakehouse tables:
 | `NATIONAL_GRID_API_TOKEN` | empty | Secure energy API token |
 | `ENERGY_LIMIT` | `1000` | Max records per energy pull |
 | `CONTRACTS_ROOT` | empty | Optional override for the folder containing `weather_schema.json` and `energy_schema.json`; defaults to `Files/data-contracts` |
+| `MAX_EXPECTED_DATA_LAG_HOURS` | `3` | Warning threshold for silver and gold freshness checks |
 
 ## Migration Notes
 
@@ -74,6 +75,7 @@ Lakehouse tables:
 - Silver and gold tables are rebuilt from raw files. That is deliberate for this project scale and keeps lineage simple.
 - For larger history, replace overwrite writes with Delta merge logic partitioned by `event_date_utc`.
 - Use Spark notebooks to modify Lakehouse Delta tables. The SQL analytics endpoint is for T-SQL querying and reusable views over those tables.
+- Freshness checks write warning rows to `dq_run_results`; required data-quality failures still fail the pipeline.
 
 ## Microsoft References
 

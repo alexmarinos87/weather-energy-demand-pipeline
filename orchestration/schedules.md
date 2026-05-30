@@ -19,8 +19,11 @@ Activities:
 3. Notebook: `03_build_gold_tables`
    - Rebuilds weather-demand join, model features, and aggregates.
 4. Notebook: `04_data_quality_checks`
+   - Optional parameter:
+     - `MAX_EXPECTED_DATA_LAG_HOURS=3`
    - Writes run results to `dq_run_results`.
    - Fails the pipeline if required checks fail.
+   - Writes freshness warnings when silver or gold timestamps are older than expected.
 
 ## Recommended Cadence
 
