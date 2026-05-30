@@ -49,6 +49,28 @@ FROM (
 UNION ALL
 
 SELECT
+    'silver_weather_freshness' AS check_name,
+    CASE
+        WHEN MAX(event_timestamp_utc) IS NULL THEN 1
+        WHEN MAX(event_timestamp_utc) < DATEADD(hour, -3, SYSUTCDATETIME()) THEN 1
+        ELSE 0
+    END AS failed_rows
+FROM dbo.silver_weather
+
+UNION ALL
+
+SELECT
+    'silver_energy_freshness' AS check_name,
+    CASE
+        WHEN MAX(event_timestamp_utc) IS NULL THEN 1
+        WHEN MAX(event_timestamp_utc) < DATEADD(hour, -3, SYSUTCDATETIME()) THEN 1
+        ELSE 0
+    END AS failed_rows
+FROM dbo.silver_energy
+
+UNION ALL
+
+SELECT
     'gold_feature_required_fields' AS check_name,
     COUNT_BIG(*) AS failed_rows
 FROM dbo.gold_feature_engineering
@@ -57,6 +79,17 @@ WHERE event_timestamp_utc IS NULL
    OR temperature IS NULL
    OR humidity IS NULL
    OR demand_mw IS NULL
+
+UNION ALL
+
+SELECT
+    'gold_feature_freshness' AS check_name,
+    CASE
+        WHEN MAX(event_timestamp_utc) IS NULL THEN 1
+        WHEN MAX(event_timestamp_utc) < DATEADD(hour, -3, SYSUTCDATETIME()) THEN 1
+        ELSE 0
+    END AS failed_rows
+FROM dbo.gold_feature_engineering
 
 UNION ALL
 
