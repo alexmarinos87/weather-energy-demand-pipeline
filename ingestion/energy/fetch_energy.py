@@ -1,7 +1,7 @@
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
@@ -11,6 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from ingestion.common.api_client import fetch_ckan_resource
 from ingestion.common.contract_validator import validate_payload
 
 ENERGY_CONTRACT_PATH = PROJECT_ROOT / "data-contracts" / "energy_schema.json"
@@ -47,28 +48,37 @@ def build_headers(api_config: dict) -> dict:
 
 
 def fetch_energy(config: dict) -> dict:
-    """Fetch electricity demand data from the UK National Grid ESO API."""
+    """Fetch one complete, bounded NGED electricity-demand snapshot."""
     api_config = config["api"]
     base_url = api_config["base_url"].rstrip("/")
     endpoint = api_config["endpoint"].lstrip("/")
     url = f"{base_url}/{endpoint}"
-    params = api_config.get("params", {})
+    params = dict(api_config.get("params", {}))
+    legacy_limit = params.pop("limit", None)
     headers = build_headers(api_config)
     timeout_seconds = api_config.get("timeout_seconds", 30)
+    page_size = api_config.get("page_size", legacy_limit or 1000)
+    max_records = api_config.get("max_records", 50_000)
 
-    response = requests.get(
-        url,
+    return fetch_ckan_resource(
+        url=url,
         params=params,
         headers=headers,
-        timeout=timeout_seconds,
+        timeout_seconds=timeout_seconds,
+        page_size=page_size,
+        max_records=max_records,
+        validate_page=lambda payload: validate_payload(
+            payload,
+            ENERGY_CONTRACT_PATH,
+            "energy",
+        ),
+        request_get=requests.get,
     )
-    response.raise_for_status()
-    return response.json()
 
 
 def save_raw_data(data: dict):
     """Save raw energy JSON to a timestamped file."""
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     output_dir = Path("data/raw/energy")
     output_dir.mkdir(parents=True, exist_ok=True)
     file_path = output_dir / f"energy_{timestamp}.json"

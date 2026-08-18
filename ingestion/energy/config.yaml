@@ -4,7 +4,8 @@ api:
   api_key_env: "NATIONAL_GRID_API_TOKEN"
   api_key_header: "Authorization"
   timeout_seconds: 30
+  page_size: 1000
+  max_records: 50000
   params:
     # Live Data (NGED) - East Midlands resource
     resource_id: "92d3431c-15d7-4aa6-ad34-2335596a026c"
-    limit: 1000
