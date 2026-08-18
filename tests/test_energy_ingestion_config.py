@@ -29,3 +29,28 @@ def test_build_headers_requires_api_key_value_when_configured(monkeypatch):
 
 def test_build_headers_allows_no_auth_config():
     assert fetch_energy.build_headers({}) == {}
+
+
+def test_fetch_energy_supports_legacy_limit_as_page_size(monkeypatch):
+    captured = {}
+
+    def fake_fetch_ckan_resource(**kwargs):
+        captured.update(kwargs)
+        return {"success": True}
+
+    monkeypatch.setattr(fetch_energy, "fetch_ckan_resource", fake_fetch_ckan_resource)
+    monkeypatch.setattr(fetch_energy.requests, "get", object())
+
+    config = {
+        "api": {
+            "base_url": "https://example.test/api/3/action",
+            "endpoint": "datastore_search",
+            "params": {"resource_id": "resource-123", "limit": 250},
+            "max_records": 5000,
+        }
+    }
+
+    assert fetch_energy.fetch_energy(config) == {"success": True}
+    assert captured["page_size"] == 250
+    assert captured["max_records"] == 5000
+    assert captured["params"] == {"resource_id": "resource-123"}

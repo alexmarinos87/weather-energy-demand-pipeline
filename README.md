@@ -25,7 +25,7 @@ By combining weather data with energy demand data, the pipeline enables detectio
 ## Data Sources
 
 - **OpenWeather API** – live and historical weather data (temperature, humidity, wind, precipitation)
-- **UK National Grid ESO** – electricity demand data
+- **National Grid Electricity Distribution (NGED) Connected Data Portal** – near-real-time demand, generation, and import data by licence area
 
 ---
 
@@ -93,9 +93,9 @@ OPENWEATHER_API_KEY=your_key
 NATIONAL_GRID_API_TOKEN=your_token
 ```
 
-4. Set the energy `resource_id` in `ingestion/energy/config.yaml`.
-   This repo currently uses the NGED **Live Data** dataset, which is regional.
-   Pick one resource (East Midlands, South Wales, South West, West Midlands).
+4. Set the NGED energy `resource_id` in `ingestion/energy/config.yaml`.
+   This repo uses the **Live Data** dataset, which is split by licence area.
+   Pick one resource (East Midlands, South Wales, South West, or West Midlands).
 
 5. Install dependencies:
 
@@ -119,9 +119,11 @@ Raw outputs are written to:
 - `data/raw/weather/`
 - `data/raw/energy/`
 
+Energy ingestion follows CKAN pages in ascending `_id` order until the record total reported by the first page is complete. The raw energy file contains the reassembled snapshot plus pagination evidence. `page_size` controls each request and `max_records` is a deliberate safety bound; the run fails instead of silently storing a partial snapshot when the bound is exceeded.
+
 ### Quick Win Implemented: Contract Gate on Ingestion
 
-Local and Fabric ingestion jobs now validate API payloads against versioned contracts before writing raw files:
+Local and Fabric ingestion jobs validate every API page against versioned contracts before writing raw files:
 
 - `data-contracts/weather_schema.json`
 - `data-contracts/energy_schema.json`

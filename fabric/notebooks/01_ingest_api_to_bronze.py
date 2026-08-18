@@ -5,10 +5,11 @@
 
 import json
 import os
-from functools import lru_cache
+from copy import deepcopy
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import requests
 from jsonschema import Draft202012Validator
@@ -19,7 +20,9 @@ WEATHER_CITY = "London,GB"
 OPENWEATHER_API_KEY = ""
 NATIONAL_GRID_API_TOKEN = ""
 NATIONAL_GRID_RESOURCE_ID = ""
-ENERGY_LIMIT = 1000
+ENERGY_PAGE_SIZE = 1000
+ENERGY_MAX_RECORDS = 50_000
+ENERGY_LIMIT = None  # Deprecated compatibility alias for ENERGY_PAGE_SIZE.
 LAKEHOUSE_FILES_ROOT = "/lakehouse/default/Files"
 CONTRACTS_ROOT = ""
 
@@ -29,6 +32,10 @@ CONTRACT_FILENAMES = {
     "weather": "weather_schema.json",
     "energy": "energy_schema.json",
 }
+
+
+class CkanPaginationError(RuntimeError):
+    """Raised when a CKAN resource cannot be retrieved completely."""
 
 
 def _get_parameter(name: str, default: Any) -> Any:
@@ -43,6 +50,18 @@ def _required_secret(value: str, env_name: str) -> str:
         f"Missing {env_name}. Pass it as a secure pipeline parameter or configure "
         "a secure secret lookup before running this notebook."
     )
+
+
+def _positive_int(value: Any, name: str) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a positive integer.")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a positive integer.") from exc
+    if parsed < 1:
+        raise ValueError(f"{name} must be a positive integer.")
+    return parsed
 
 
 def _unique_paths(paths: list[Path]) -> list[Path]:
@@ -129,16 +148,160 @@ def _validate_payload(payload: dict[str, Any], dataset_name: str) -> None:
     raise ValueError("\n".join(lines))
 
 
+def _fetch_ckan_resource(
+    *,
+    url: str,
+    resource_id: str,
+    api_token: str,
+    page_size: int,
+    max_records: int,
+    timeout_seconds: int = 30,
+    validate_page: Callable[[dict[str, Any]], None] | None = None,
+    request_get: Callable[..., Any] | None = None,
+) -> dict[str, Any]:
+    """Retrieve a deterministic, bounded CKAN snapshot for one resource."""
+    page_size = _positive_int(page_size, "ENERGY_PAGE_SIZE")
+    max_records = _positive_int(max_records, "ENERGY_MAX_RECORDS")
+    timeout_seconds = _positive_int(timeout_seconds, "timeout_seconds")
+    request_get = request_get or requests.get
+
+    first_payload: dict[str, Any] | None = None
+    snapshot_total: int | None = None
+    latest_reported_total: int | None = None
+    records: list[dict[str, Any]] = []
+    seen_ids: set[int] = set()
+    last_id: int | None = None
+    page_count = 0
+
+    while snapshot_total is None or len(records) < snapshot_total:
+        remaining = max_records - len(records)
+        if remaining < 1:
+            raise CkanPaginationError(
+                f"CKAN snapshot exceeded ENERGY_MAX_RECORDS={max_records}."
+            )
+        requested_limit = min(page_size, remaining)
+        if snapshot_total is not None:
+            requested_limit = min(requested_limit, snapshot_total - len(records))
+
+        response = request_get(
+            url,
+            params={
+                "resource_id": resource_id,
+                "limit": requested_limit,
+                "offset": len(records),
+                "sort": "_id asc",
+            },
+            headers={"Authorization": api_token},
+            timeout=timeout_seconds,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise CkanPaginationError("CKAN response must be a JSON object.")
+        if validate_page is not None:
+            validate_page(payload)
+
+        result = payload.get("result")
+        if not isinstance(result, dict):
+            raise CkanPaginationError("CKAN response is missing result metadata.")
+        if result.get("resource_id") != resource_id:
+            raise CkanPaginationError("CKAN returned an unexpected resource_id.")
+
+        reported_total = result.get("total")
+        if (
+            isinstance(reported_total, bool)
+            or not isinstance(reported_total, int)
+            or reported_total < 0
+        ):
+            raise CkanPaginationError("CKAN result.total must be non-negative.")
+        latest_reported_total = reported_total
+
+        page_records = result.get("records")
+        if not isinstance(page_records, list):
+            raise CkanPaginationError("CKAN result.records must be an array.")
+
+        if snapshot_total is None:
+            snapshot_total = reported_total
+            if snapshot_total > max_records:
+                raise CkanPaginationError(
+                    f"CKAN snapshot contains {snapshot_total} records, above "
+                    f"ENERGY_MAX_RECORDS={max_records}."
+                )
+            first_payload = deepcopy(payload)
+        elif reported_total < snapshot_total:
+            raise CkanPaginationError(
+                "CKAN result.total decreased during pagination."
+            )
+
+        if snapshot_total == 0:
+            if page_records:
+                raise CkanPaginationError(
+                    "CKAN reported zero total records but returned data."
+                )
+            break
+        if not page_records:
+            raise CkanPaginationError(
+                f"CKAN returned an empty page at offset {len(records)} before "
+                "the snapshot was complete."
+            )
+        if len(page_records) > requested_limit:
+            raise CkanPaginationError(
+                "CKAN returned more records than the requested page limit."
+            )
+
+        for record in page_records:
+            if not isinstance(record, dict):
+                raise CkanPaginationError("CKAN records must be JSON objects.")
+            record_id = record.get("_id")
+            if isinstance(record_id, bool) or not isinstance(record_id, int):
+                raise CkanPaginationError("Each CKAN record must have an integer _id.")
+            if record_id in seen_ids:
+                raise CkanPaginationError(
+                    f"CKAN record _id={record_id} appeared more than once."
+                )
+            if last_id is not None and record_id <= last_id:
+                raise CkanPaginationError(
+                    "CKAN pages were not ordered by ascending _id."
+                )
+            seen_ids.add(record_id)
+            last_id = record_id
+            records.append(record)
+
+        page_count += 1
+
+    if first_payload is None or snapshot_total is None:
+        raise CkanPaginationError("CKAN pagination completed without a response.")
+    if len(records) != snapshot_total:
+        raise CkanPaginationError(
+            f"Expected {snapshot_total} records but retrieved {len(records)}."
+        )
+
+    combined = first_payload
+    combined_result = combined["result"]
+    combined_result["records"] = records
+    combined_result["limit"] = page_size
+    combined_result["offset"] = 0
+    combined_result["total"] = snapshot_total
+    combined_result["pagination"] = {
+        "complete": True,
+        "page_size": page_size,
+        "page_count": page_count,
+        "records_fetched": len(records),
+        "source_total_at_start": snapshot_total,
+        "source_total_at_finish": latest_reported_total,
+        "sort": "_id asc",
+    }
+    return combined
+
+
 def _write_raw_json(dataset_name: str, payload: dict[str, Any]) -> str:
     now_utc = datetime.now(timezone.utc)
     timestamp = now_utc.strftime("%Y%m%d_%H%M%S")
     ingestion_date = now_utc.strftime("%Y-%m-%d")
-    output_dir = (
-        Path(LAKEHOUSE_FILES_ROOT)
-        / "raw"
-        / dataset_name
-        / f"ingestion_date={ingestion_date}"
+    files_root = Path(
+        str(_get_parameter("LAKEHOUSE_FILES_ROOT", LAKEHOUSE_FILES_ROOT))
     )
+    output_dir = files_root / "raw" / dataset_name / f"ingestion_date={ingestion_date}"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{dataset_name}_{timestamp}.json"
     with output_path.open("w") as f:
@@ -163,6 +326,16 @@ def fetch_weather() -> dict[str, Any]:
     return payload
 
 
+def _energy_page_size() -> int:
+    legacy_limit = _get_parameter("ENERGY_LIMIT", ENERGY_LIMIT)
+    configured = (
+        legacy_limit
+        if legacy_limit not in (None, "")
+        else _get_parameter("ENERGY_PAGE_SIZE", ENERGY_PAGE_SIZE)
+    )
+    return _positive_int(configured, "ENERGY_PAGE_SIZE")
+
+
 def fetch_energy() -> dict[str, Any]:
     api_token = _required_secret(
         _get_parameter("NATIONAL_GRID_API_TOKEN", NATIONAL_GRID_API_TOKEN),
@@ -172,16 +345,18 @@ def fetch_energy() -> dict[str, Any]:
     if not resource_id:
         raise ValueError("Missing NATIONAL_GRID_RESOURCE_ID pipeline parameter.")
 
-    response = requests.get(
-        f"{NATIONAL_GRID_BASE_URL}/datastore_search",
-        params={"resource_id": resource_id, "limit": int(_get_parameter("ENERGY_LIMIT", ENERGY_LIMIT))},
-        headers={"Authorization": api_token},
-        timeout=30,
+    return _fetch_ckan_resource(
+        url=f"{NATIONAL_GRID_BASE_URL}/datastore_search",
+        resource_id=resource_id,
+        api_token=api_token,
+        page_size=_energy_page_size(),
+        max_records=_positive_int(
+            _get_parameter("ENERGY_MAX_RECORDS", ENERGY_MAX_RECORDS),
+            "ENERGY_MAX_RECORDS",
+        ),
+        validate_page=lambda payload: _validate_payload(payload, "energy"),
+        request_get=requests.get,
     )
-    response.raise_for_status()
-    payload = response.json()
-    _validate_payload(payload, "energy")
-    return payload
 
 
 def main() -> list[str]:

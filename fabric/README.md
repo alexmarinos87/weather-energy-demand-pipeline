@@ -24,6 +24,8 @@ Raw API captures:
 - `Files/raw/weather/ingestion_date=YYYY-MM-DD/weather_YYYYMMDD_HHMMSS.json`
 - `Files/raw/energy/ingestion_date=YYYY-MM-DD/energy_YYYYMMDD_HHMMSS.json`
 
+The energy file is one reassembled CKAN snapshot. Each source page is contract-validated, pages are requested in ascending `_id` order, and the run fails if it cannot reach the starting total within `ENERGY_MAX_RECORDS`.
+
 Versioned ingestion contracts:
 
 - `Files/data-contracts/weather_schema.json`
@@ -61,10 +63,12 @@ Lakehouse tables:
 | --- | --- | --- |
 | `DATASET` | `all` | `all`, `weather`, or `energy` |
 | `WEATHER_CITY` | `London,GB` | OpenWeather city query |
-| `NATIONAL_GRID_RESOURCE_ID` | empty | Connected Data resource UUID |
+| `NATIONAL_GRID_RESOURCE_ID` | empty | NGED Connected Data resource UUID |
 | `OPENWEATHER_API_KEY` | empty | Secure weather API key |
 | `NATIONAL_GRID_API_TOKEN` | empty | Secure energy API token |
-| `ENERGY_LIMIT` | `1000` | Max records per energy pull |
+| `ENERGY_PAGE_SIZE` | `1000` | Records requested per deterministic CKAN page |
+| `ENERGY_MAX_RECORDS` | `50000` | Maximum records permitted in one raw snapshot before failing |
+| `ENERGY_LIMIT` | empty | Deprecated compatibility alias for `ENERGY_PAGE_SIZE` |
 | `CONTRACTS_ROOT` | empty | Optional override for the folder containing `weather_schema.json` and `energy_schema.json`; defaults to `Files/data-contracts` |
 | `MAX_EXPECTED_DATA_LAG_HOURS` | `3` | Warning threshold for silver and gold freshness checks |
 
@@ -76,6 +80,7 @@ Lakehouse tables:
 - For larger history, replace overwrite writes with Delta merge logic partitioned by `event_date_utc`.
 - Use Spark notebooks to modify Lakehouse Delta tables. The SQL analytics endpoint is for T-SQL querying and reusable views over those tables.
 - Freshness checks write warning rows to `dq_run_results`; required data-quality failures still fail the pipeline.
+- Raise `ENERGY_MAX_RECORDS` only after reviewing API cost, payload size, and Fabric memory impact; do not reduce completeness by lowering a request limit.
 
 ## Microsoft References
 

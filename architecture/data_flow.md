@@ -5,7 +5,7 @@ This project now targets Microsoft Fabric as the managed analytics platform.
 ## Target Architecture
 
 ```text
-OpenWeather API             National Grid Connected Data API
+OpenWeather API             NGED Connected Data API
        |                                  |
        | Fabric notebook HTTP ingestion   |
        | with JSON contract validation    |
@@ -29,10 +29,12 @@ Analyst queries, dashboards, forecasting features
 
 ## Medallion Layout
 
-Raw files are immutable API captures:
+Raw files are immutable source captures:
 
 - `Files/raw/weather/ingestion_date=YYYY-MM-DD/weather_YYYYMMDD_HHMMSS.json`
 - `Files/raw/energy/ingestion_date=YYYY-MM-DD/energy_YYYYMMDD_HHMMSS.json`
+
+The energy capture is a deterministic, bounded CKAN snapshot assembled in ascending `_id` order. Pagination metadata records the page count, page size, starting source total, finishing source total, and completeness state.
 
 Bronze ingestion validates API responses against:
 
@@ -68,6 +70,7 @@ Data quality run history is stored in:
 ## Operational Notes
 
 - Keep raw API responses immutable so downstream records remain traceable to source payloads.
+- Fail ingestion when the CKAN source cannot be retrieved completely within the configured record bound.
 - Recompute silver and gold tables from raw files for this project scale. Move to incremental merge logic when history becomes large.
 - Use a Fabric deployment pipeline or Git integration for promotion between dev, test, and production workspaces.
 - Keep API keys in Fabric connections, Azure Key Vault, or secure pipeline parameters. Do not commit secrets.
