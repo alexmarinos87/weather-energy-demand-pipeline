@@ -14,10 +14,14 @@ DATASET=all
 Recommended controls:
 
 - two retries with at least five minutes between attempts;
-- 30-minute timeout per notebook activity;
+- 30-minute timeout per ingestion, silver, gold, and quality activity;
+- a separate reviewed timeout for baseline forecasting after observing group sizes;
 - secure credential parameters or Fabric connections;
-- ingestion failure stops silver and gold rebuilds;
-- data-quality errors fail the run after results are written;
+- ingestion failure stops all downstream work;
+- forecasting runs only after causal gold features are rebuilt;
+- final quality errors fail the run after results are written;
 - warning results remain visible for freshness, unmatched weather, and legacy unscoped history.
 
-Move to a 15- or 30-minute cadence only after confirming API quotas, source update behaviour, Fabric capacity headroom, and downstream latency needs.
+Each scheduled forecasting run appends prediction and metric evidence. Define a retention/compaction policy before increasing cadence or retained history.
+
+Move to a 15- or 30-minute cadence only after confirming API quotas, source update behaviour, Fabric capacity headroom, forecast-table growth, and downstream latency needs.
