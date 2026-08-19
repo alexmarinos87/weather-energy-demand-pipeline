@@ -178,7 +178,7 @@ spark.sql(
             AVG(demand_mw) OVER (
                 PARTITION BY source_area, resource_id, city
                 ORDER BY event_timestamp_utc
-                ROWS BETWEEN 11 PRECEDING AND CURRENT ROW
+                ROWS BETWEEN 12 PRECEDING AND 1 PRECEDING
             ) AS demand_rolling_mean_12,
             AVG(temperature) OVER (
                 PARTITION BY source_area, resource_id, city

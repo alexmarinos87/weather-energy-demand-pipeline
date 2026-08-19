@@ -15,6 +15,12 @@ Pipeline name: `weather_energy_demand_pipeline`
 | `ENERGY_PAGE_SIZE` | No | Default `1000`. |
 | `ENERGY_MAX_RECORDS` | No | Default `50000`; ingestion fails rather than truncates. |
 | `CONTRACTS_ROOT` | No | Override only when contracts are not in `Files/data-contracts`. |
+| `TRAIN_FRACTION` | No | Default `0.60`. |
+| `VALIDATION_FRACTION` | No | Default `0.20`. |
+| `MIN_TRAIN_ROWS` | No | Default `24`. |
+| `MIN_VALIDATION_ROWS` | No | Default `6`. |
+| `MIN_TEST_ROWS` | No | Default `6`. |
+| `RIDGE_REG_PARAM` | No | Default `1.0`. |
 | `MAX_EXPECTED_DATA_LAG_HOURS` | No | Default `3`. |
 
 ## Activities
@@ -29,8 +35,18 @@ Pipeline name: `weather_energy_demand_pipeline`
 3. `03_build_gold_tables`
    - Depend on silver success.
    - Match only same-area, past weather no more than six hours old.
+   - Ensure target-derived rolling features exclude the current row.
 4. `04_data_quality_checks`
    - Depend on gold success.
-   - Persist all results and fail on blocking errors.
+   - Persist source and gold quality results and fail on blocking defects.
+5. `05_baseline_forecasting`
+   - Depend on source/gold quality success.
+   - Pass optional split, minimum-history, and ridge parameters.
+   - Append chronological prediction and metric evidence.
+   - Fail on insufficient history, duplicate timestamps, invalid predictions, or training-boundary leakage.
+6. `06_forecast_quality_checks`
+   - Depend on forecasting success.
+   - Validate the newest prediction and metric run.
+   - Append results to `dq_run_results` and fail on blocking defects.
 
-Start hourly. Use two retries separated by at least five minutes. Do not enable a faster cadence until API quota, source latency, and Fabric capacity have been observed.
+Start hourly. Use two retries separated by at least five minutes. Do not enable a faster cadence until API quota, source latency, forecast run growth, and Fabric capacity have been observed.

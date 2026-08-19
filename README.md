@@ -2,18 +2,20 @@
 
 ## Problem
 
-Weather and electricity-demand data arrive from different systems, at different frequencies, and with different spatial meanings. Combining them without explicit source identity can produce untraceable analysis, cross-region joins, or features that accidentally use weather observations from the future.
+Weather and electricity-demand data arrive from different systems, at different frequencies, and with different spatial meanings. Combining them without explicit source identity can produce untraceable analysis, cross-region joins, features that use weather from the future, or model scores contaminated by training on evaluation rows.
 
 ## Solution
 
 This project implements a Microsoft Fabric medallion pipeline that:
 
 - ingests OpenWeather observations and complete, bounded NGED Live Data snapshots;
-- validates every source response against versioned contracts before writing raw data;
+- validates source responses against versioned contracts before writing raw data;
 - binds each NGED licence-area resource to an explicit project weather proxy;
 - propagates source-area and file-level provenance through silver tables;
 - joins only same-area weather at or before each demand timestamp;
-- builds Delta feature and aggregation tables for analysis and forecasting;
+- builds leakage-safe lag, rolling, calendar, weather, and aggregation features;
+- evaluates persistence and regularised linear baselines with chronological train, validation, and test boundaries;
+- appends prediction and metric evidence to Delta tables; and
 - records blocking and warning data-quality results in `dq_run_results`.
 
 The active cloud target is Microsoft Fabric: OneLake, Lakehouse Delta tables, Spark notebooks, Data Factory orchestration, the SQL analytics endpoint, and Power BI-ready outputs.
@@ -34,7 +36,7 @@ The active cloud target is Microsoft Fabric: OneLake, Lakehouse Delta tables, Sp
 
 The cities are representative project proxies. They are not official NGED mappings and do not represent all weather conditions across a licence area.
 
-## Data flow
+## Data and evaluation flow
 
 ```text
 OpenWeather + NGED Live Data
@@ -43,18 +45,55 @@ OneLake immutable raw JSON + provenance metadata
         ↓ typed parsing and deduplication
 silver_weather + silver_energy
         ↓ same-area, past-only weather matching
- gold_weather_demand_join
-        ↓ lags, rolling features and domain features
- gold_feature_engineering
+gold_weather_demand_join
+        ↓ prior-demand lags/rolling windows + causal weather/calendar features
+gold_feature_engineering
         ↓ hourly and daily summaries
- gold_demand_aggregation
+gold_demand_aggregation
+        ↓ chronological train / validation / test
+persistence_lag_1 + ridge_weather_lag
         ↓
-SQL endpoint / Power BI / forecasting experiments
+forecast_baseline_predictions + forecast_baseline_metrics
+        ↓
+SQL endpoint / Power BI / model comparison
 ```
 
-For each demand observation, the gold join selects the latest weather observation from the same `source_area` whose timestamp is no later than demand time and no more than six hours old.
+For each demand observation, the gold join selects the latest weather observation from the same `source_area` whose timestamp is no later than demand time and no more than six hours old. Demand rolling features exclude the current target row.
 
-## Local development quickstart
+## Credential-free forecasting demo
+
+The local benchmark requires no API credentials and writes reproducible CSV or Parquet evidence:
+
+```bash
+python3 -m pip install -r requirements.txt
+python3 -m forecasting.run_baseline \
+  --demo \
+  --output-dir data/forecasting \
+  --output-format csv
+```
+
+Outputs:
+
+- `data/forecasting/baseline_predictions.csv`
+- `data/forecasting/baseline_metrics.csv`
+
+The demo compares:
+
+- `persistence_lag_1` — previous demand as the prediction;
+- `ridge_weather_lag` — regularised linear demand model using only causal lag, rolling, weather, and calendar features.
+
+Each prediction stores `trained_through_utc`. The run fails if an evaluation timestamp is not strictly later than its training boundary.
+
+For exported Fabric features, replace `--demo` with:
+
+```bash
+python3 -m forecasting.run_baseline \
+  --input gold_feature_engineering.parquet \
+  --output-dir data/forecasting \
+  --output-format parquet
+```
+
+## Local ingestion development
 
 ```bash
 cp ingestion/weather/config.example.yaml ingestion/weather/config.yaml
@@ -85,13 +124,13 @@ Energy ingestion requests CKAN pages in ascending `_id` order until the total re
 
 1. Create and attach the `weather_energy_lakehouse` Lakehouse.
 2. Upload all files in `data-contracts/` to `Files/data-contracts/`.
-3. Import the notebook sources in `fabric/notebooks/`.
+3. Import notebook sources `01` through `06` from `fabric/notebooks/`.
 4. Create `weather_energy_demand_pipeline` from `fabric/pipelines/weather_energy_demand_pipeline.md`.
 5. Supply secure credentials and a consistent `SOURCE_AREA`, `WEATHER_CITY`, and `NATIONAL_GRID_RESOURCE_ID`.
-6. Run ingestion, silver, gold, and data quality in order.
-7. Optionally create pass-through SQL views from `fabric/sql/gold_views_tsql.sql`.
+6. Run ingestion, silver, gold, source/gold quality, baseline forecasting, and forecast quality in order.
+7. Optionally create pass-through SQL views from `fabric/sql/gold_views_tsql.sql` and `fabric/sql/forecast_views_tsql.sql`.
 8. Enable the schedule only after source quotas and Fabric capacity are confirmed.
 
-## Current product boundary
+## Forecasting boundary
 
-The repository now produces spatially and temporally valid forecasting features, but it does not yet train or evaluate a demand-forecasting model. A chronological baseline/backtesting layer is the next product increment.
+The implemented baseline is a historical one-step benchmark using causal observed weather and prior demand. It is suitable for validating feature usefulness and model plumbing. A production forward forecast would additionally require forecast-weather inputs, horizon-specific labels, drift monitoring, and a model promotion process.
