@@ -1,32 +1,14 @@
-# NGED Resource ID Lookup
+# NGED Live Data licence-area resources
 
-This pipeline uses the National Grid Electricity Distribution (NGED) Connected Data Portal and CKAN's `datastore_search`. It needs a resource ID UUID for one licence-area resource in the **Live Data** dataset.
+This pipeline uses CKAN `datastore_search` against National Grid Electricity Distribution's **Live Data** dataset. The dataset is split by licence area.
 
-Option A (UI).
-1. Sign in to the NGED Connected Data Portal if the selected resource requires it.
-2. Open the **Live Data** dataset.
-3. Open the specific licence-area resource.
-4. Copy the resource ID UUID shown on the resource page or in the URL.
+| `source_area` | Licence area | Resource ID | Project weather proxy |
+| --- | --- | --- | --- |
+| `east_midlands` | East Midlands | `92d3431c-15d7-4aa6-ad34-2335596a026c` | `Nottingham,GB` |
+| `south_wales` | South Wales | `38b81427-a2df-42f2-befa-4d6fe9b54c98` | `Cardiff,GB` |
+| `south_west` | South West | `85aaa199-15df-40ec-845f-6c61cbedc20f` | `Bristol,GB` |
+| `west_midlands` | West Midlands | `1c3447df-37d7-4fb4-9f99-0e2a0d691dbe` | `Birmingham,GB` |
 
-Option B (API).
-1. Call `package_show` to list resources for the dataset.
-2. Find the resource UUID at `result.resources[].id`.
-3. Set that UUID in `ingestion/energy/config.yaml` as `resource_id`.
+The resource IDs come from the NGED Live Data dataset. The city choices are project-owned representative proxies, not claims that one city describes weather across the entire licence area.
 
-Example (API).
-```bash
-curl -s \
-  -H "Authorization: $NATIONAL_GRID_API_TOKEN" \
-  "https://connecteddata.nationalgrid.co.uk/api/3/action/package_show?id=live-data"
-```
-
-Example (small diagnostic fetch only).
-```bash
-curl -s \
-  -H "Authorization: $NATIONAL_GRID_API_TOKEN" \
-  "https://connecteddata.nationalgrid.co.uk/api/3/action/datastore_search?resource_id=<resource_uuid>&limit=5&sort=_id%20asc"
-```
-
-The pipeline does not treat that diagnostic limit as a completeness boundary. It follows deterministic pages until the total reported by the first page is reached, then stores the combined snapshot with pagination evidence. Configure `page_size` and the explicit `max_records` safety bound in `config.yaml`.
-
-Some portal endpoints use `Ocp-Apim-Subscription-Key` instead of `Authorization`. If your token requires a different header, update `api_key_header` in `ingestion/energy/config.yaml` accordingly.
+The authoritative machine-readable binding is `data-contracts/source_areas.json`. Local and Fabric ingestion reject a resource/city combination that does not match its configured `source_area` before making a network request.

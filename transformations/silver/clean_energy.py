@@ -14,6 +14,9 @@ ENERGY_CANONICAL_COLUMNS = [
     "source_file",
     "resource_id",
     "source_record_id",
+    "source_area",
+    "source_area_name",
+    "metadata_contract_version",
     "event_timestamp_utc",
     "ingestion_timestamp_utc",
     "event_date_utc",
@@ -50,8 +53,13 @@ def _to_float(value: Any) -> float | None:
     return float(value)
 
 
-def _build_records(raw_json: dict[str, Any], source_file: str, ingestion_ts: datetime) -> list[dict[str, Any]]:
+def _build_records(
+    raw_json: dict[str, Any],
+    source_file: str,
+    ingestion_ts: datetime,
+) -> list[dict[str, Any]]:
     result = raw_json.get("result", {})
+    metadata = raw_json.get("_pipeline_metadata") or {}
     resource_id = result.get("resource_id")
     records = result.get("records", [])
 
@@ -64,6 +72,9 @@ def _build_records(raw_json: dict[str, Any], source_file: str, ingestion_ts: dat
                 "source_file": source_file,
                 "resource_id": resource_id,
                 "source_record_id": record.get("_id"),
+                "source_area": metadata.get("source_area"),
+                "source_area_name": metadata.get("source_area_name"),
+                "metadata_contract_version": metadata.get("contract_version"),
                 "event_timestamp_utc": event_ts,
                 "ingestion_timestamp_utc": pd.Timestamp(ingestion_ts),
                 "event_date_utc": event_ts.strftime("%Y-%m-%d"),
@@ -85,8 +96,8 @@ def transform_energy_files(raw_dir: Path = RAW_DIR) -> pd.DataFrame:
     records: list[dict[str, Any]] = []
     for filepath in sorted(raw_dir.glob("*.json")):
         try:
-            with filepath.open("r") as f:
-                raw_data = json.load(f)
+            with filepath.open("r", encoding="utf-8") as file_handle:
+                raw_data = json.load(file_handle)
             records.extend(
                 _build_records(
                     raw_json=raw_data,
@@ -103,7 +114,12 @@ def transform_energy_files(raw_dir: Path = RAW_DIR) -> pd.DataFrame:
     df = pd.DataFrame(records)[ENERGY_CANONICAL_COLUMNS]
     df = df.sort_values("ingestion_timestamp_utc")
     df = df.drop_duplicates(
-        subset=["resource_id", "source_record_id", "event_timestamp_utc"],
+        subset=[
+            "source_area",
+            "resource_id",
+            "source_record_id",
+            "event_timestamp_utc",
+        ],
         keep="last",
     )
     return df.reset_index(drop=True)
@@ -119,7 +135,6 @@ def save_clean_data(df: pd.DataFrame, output_path: Path = SILVER_DIR):
     for event_date, partition_df in df.groupby("event_date_utc", sort=True):
         output_dir = output_path / f"dt={event_date}"
         output_dir.mkdir(parents=True, exist_ok=True)
-
         output_file = output_dir / f"energy_clean_{run_timestamp}.parquet"
         partition_df.to_parquet(output_file, index=False)
         print(f"Saved cleaned energy data to {output_file}")

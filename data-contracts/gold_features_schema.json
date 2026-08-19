@@ -1,32 +1,26 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "weather_energy_features_v1",
-  "description": "Draft contract for analytics-ready gold features.",
+  "title": "weather_energy_features_v2",
+  "description": "Contract for spatially scoped, analytics-ready weather-demand features.",
   "type": "object",
   "required": [
     "event_timestamp_utc",
+    "source_area",
+    "resource_id",
     "city",
     "temperature",
     "humidity",
     "demand_mw"
   ],
   "properties": {
-    "event_timestamp_utc": {
-      "type": "string",
-      "format": "date-time"
-    },
-    "city": {
-      "type": "string"
-    },
-    "temperature": {
-      "type": "number"
-    },
-    "humidity": {
-      "type": "number"
-    },
-    "demand_mw": {
-      "type": "number"
-    }
+    "event_timestamp_utc": {"type": "string", "format": "date-time"},
+    "source_area": {"type": "string", "minLength": 1},
+    "resource_id": {"type": "string", "minLength": 1},
+    "city": {"type": "string", "minLength": 1},
+    "temperature": {"type": "number"},
+    "humidity": {"type": "number"},
+    "demand_mw": {"type": "number"},
+    "weather_age_minutes": {"type": "number", "minimum": 0, "maximum": 360}
   },
   "additionalProperties": true
 }

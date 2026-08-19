@@ -1,4 +1,4 @@
-# Fabric Data Factory Pipeline
+# Fabric Data Factory pipeline
 
 Pipeline name: `weather_energy_demand_pipeline`
 
@@ -7,36 +7,30 @@ Pipeline name: `weather_energy_demand_pipeline`
 | Name | Required | Notes |
 | --- | --- | --- |
 | `DATASET` | Yes | Use `all` for scheduled runs. |
-| `WEATHER_CITY` | Yes | Example: `London,GB`. |
-| `NATIONAL_GRID_RESOURCE_ID` | Yes | NGED Connected Data resource UUID. |
-| `OPENWEATHER_API_KEY` | Yes | Mark as secure. |
-| `NATIONAL_GRID_API_TOKEN` | Yes | Mark as secure. |
-| `ENERGY_PAGE_SIZE` | No | Default `1000`; records per deterministic CKAN request. |
-| `ENERGY_MAX_RECORDS` | No | Default `50000`; fail rather than publish a larger unreviewed snapshot. |
-| `ENERGY_LIMIT` | No | Deprecated compatibility alias for `ENERGY_PAGE_SIZE`. |
-| `CONTRACTS_ROOT` | No | Override only if contracts are not stored under `Files/data-contracts`. |
-| `MAX_EXPECTED_DATA_LAG_HOURS` | No | Default `3`; passed to data quality checks as the freshness warning threshold. |
+| `SOURCE_AREA` | Yes | Key from `source_areas.json`. |
+| `WEATHER_CITY` | Yes | Must match the area's weather proxy. |
+| `NATIONAL_GRID_RESOURCE_ID` | Yes | Must match the area's NGED resource. |
+| `OPENWEATHER_API_KEY` | Yes | Secure parameter or connection-backed secret. |
+| `NATIONAL_GRID_API_TOKEN` | Yes | Secure parameter or connection-backed secret. |
+| `ENERGY_PAGE_SIZE` | No | Default `1000`. |
+| `ENERGY_MAX_RECORDS` | No | Default `50000`; ingestion fails rather than truncates. |
+| `CONTRACTS_ROOT` | No | Override only when contracts are not in `Files/data-contracts`. |
+| `MAX_EXPECTED_DATA_LAG_HOURS` | No | Default `3`. |
 
 ## Activities
 
-1. Notebook activity: `01_ingest_api_to_bronze`
-   - Pass all pipeline parameters.
-   - Validate every API response page against the versioned JSON contracts.
-   - Reassemble the complete energy snapshot in ascending CKAN `_id` order.
-   - Stop the pipeline on contract failure, pagination inconsistency, or record-bound violation.
-2. Notebook activity: `02_bronze_to_silver`
-   - Depends on ingestion success.
-3. Notebook activity: `03_build_gold_tables`
-   - Depends on silver success.
-4. Notebook activity: `04_data_quality_checks`
-   - Depends on gold success.
-   - Pass `MAX_EXPECTED_DATA_LAG_HOURS` when overriding the default freshness threshold.
-   - Any raised exception should fail the pipeline.
+1. `01_ingest_api_to_bronze`
+   - Preflight the source-area/resource/city binding before source I/O.
+   - Validate every API response page.
+   - Write immutable raw JSON with provenance metadata.
+2. `02_bronze_to_silver`
+   - Depend on successful ingestion.
+   - Build typed, deduplicated silver tables and retain source identity.
+3. `03_build_gold_tables`
+   - Depend on silver success.
+   - Match only same-area, past weather no more than six hours old.
+4. `04_data_quality_checks`
+   - Depend on gold success.
+   - Persist all results and fail on blocking errors.
 
-## Schedule
-
-Use the cadence in `orchestration/schedules.md`. Start hourly until API quota and Fabric capacity usage are confirmed.
-
-## Observability
-
-Use the pipeline run history for activity failures and the Lakehouse table `dq_run_results` for data quality failures. Raw energy files also expose pagination evidence under `result.pagination`.
+Start hourly. Use two retries separated by at least five minutes. Do not enable a faster cadence until API quota, source latency, and Fabric capacity have been observed.

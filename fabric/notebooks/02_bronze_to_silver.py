@@ -1,10 +1,9 @@
 # Fabric notebook source: 02_bronze_to_silver
-#
-# Reads immutable raw API captures from OneLake Files and rebuilds canonical
-# silver Delta tables in the attached Lakehouse.
+# Reads immutable raw captures and rebuilds canonical silver Delta tables.
 
 from pyspark.sql import Window
 from pyspark.sql import functions as F
+from pyspark.sql.types import StructType
 
 
 spark.conf.set("spark.sql.session.timeZone", "UTC")
@@ -25,18 +24,44 @@ def _file_timestamp_col(prefix: str) -> F.Column:
     return F.to_timestamp(timestamp_text, "yyyyMMdd_HHmmss")
 
 
-weather_raw = spark.read.option("multiLine", "true").json(WEATHER_RAW_PATH)
+def _metadata_string_col(dataframe, field_name: str) -> F.Column:
+    """Read optional metadata while keeping legacy raw files processable."""
+    if "_pipeline_metadata" not in dataframe.columns:
+        return F.lit(None).cast("string")
+    metadata_type = dataframe.schema["_pipeline_metadata"].dataType
+    if not isinstance(metadata_type, StructType) or field_name not in metadata_type.fieldNames():
+        return F.lit(None).cast("string")
+    return F.col(f"_pipeline_metadata.{field_name}").cast("string")
 
+
+weather_raw = spark.read.option("multiLine", "true").json(WEATHER_RAW_PATH)
 weather_event_ts = F.to_timestamp(F.from_unixtime(F.col("dt").cast("long")))
 weather_df = (
     weather_raw
     .withColumn("source_file", _filename_col())
+    .withColumn("source_area", _metadata_string_col(weather_raw, "source_area"))
+    .withColumn(
+        "source_area_name",
+        _metadata_string_col(weather_raw, "source_area_name"),
+    )
+    .withColumn(
+        "metadata_contract_version",
+        _metadata_string_col(weather_raw, "contract_version"),
+    )
+    .withColumn(
+        "weather_proxy_city",
+        _metadata_string_col(weather_raw, "weather_proxy_city"),
+    )
     .withColumn("event_timestamp_utc", weather_event_ts)
     .withColumn("ingestion_timestamp_utc", _file_timestamp_col("weather"))
     .select(
         F.lit("weather").alias("source_dataset"),
         F.col("source_file"),
         F.col("id").cast("string").alias("source_record_id"),
+        F.col("source_area"),
+        F.col("source_area_name"),
+        F.col("metadata_contract_version"),
+        F.col("weather_proxy_city"),
         F.col("event_timestamp_utc"),
         F.col("ingestion_timestamp_utc"),
         F.to_date("event_timestamp_utc").alias("event_date_utc"),
@@ -55,9 +80,9 @@ weather_df = (
     )
 )
 
-weather_window = Window.partitionBy("city", "event_timestamp_utc").orderBy(
-    F.col("ingestion_timestamp_utc").desc_nulls_last()
-)
+weather_window = Window.partitionBy(
+    "source_area", "city", "event_timestamp_utc"
+).orderBy(F.col("ingestion_timestamp_utc").desc_nulls_last())
 weather_df = (
     weather_df
     .withColumn("_rn", F.row_number().over(weather_window))
@@ -76,10 +101,18 @@ weather_df = (
 
 
 energy_raw = spark.read.option("multiLine", "true").json(ENERGY_RAW_PATH)
-
 energy_df = (
     energy_raw
     .withColumn("source_file", _filename_col())
+    .withColumn("source_area", _metadata_string_col(energy_raw, "source_area"))
+    .withColumn(
+        "source_area_name",
+        _metadata_string_col(energy_raw, "source_area_name"),
+    )
+    .withColumn(
+        "metadata_contract_version",
+        _metadata_string_col(energy_raw, "contract_version"),
+    )
     .withColumn("ingestion_timestamp_utc", _file_timestamp_col("energy"))
     .withColumn("record", F.explode_outer("result.records"))
     .withColumn("event_timestamp_utc", F.to_timestamp(F.col("record.Timestamp")))
@@ -88,6 +121,9 @@ energy_df = (
         F.col("source_file"),
         F.col("result.resource_id").alias("resource_id"),
         F.col("record._id").cast("string").alias("source_record_id"),
+        F.col("source_area"),
+        F.col("source_area_name"),
+        F.col("metadata_contract_version"),
         F.col("event_timestamp_utc"),
         F.col("ingestion_timestamp_utc"),
         F.to_date("event_timestamp_utc").alias("event_date_utc"),
@@ -102,6 +138,7 @@ energy_df = (
 )
 
 energy_window = Window.partitionBy(
+    "source_area",
     "resource_id",
     "source_record_id",
     "event_timestamp_utc",

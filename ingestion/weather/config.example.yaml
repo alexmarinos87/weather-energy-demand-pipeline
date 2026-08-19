@@ -1,5 +1,6 @@
+source_area: "east_midlands"
 api:
   base_url: "https://api.openweathermap.org/data/2.5"
-  city: "London,GB"
+  city: "Nottingham,GB"
   units: "metric"
   api_key_env: "OPENWEATHER_API_KEY"

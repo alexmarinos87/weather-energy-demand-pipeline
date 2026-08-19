@@ -1,7 +1,5 @@
 # Fabric notebook source: 03_build_gold_tables
-#
-# Rebuilds gold Delta tables from the canonical silver tables.
-
+# Builds spatially scoped, causal gold Delta tables from canonical silver data.
 
 spark.conf.set("spark.sql.session.timeZone", "UTC")
 
@@ -13,6 +11,8 @@ spark.sql(
     AS
     WITH candidate_pairs AS (
         SELECT
+            e.source_area,
+            e.source_area_name,
             e.resource_id,
             e.source_record_id,
             e.event_timestamp_utc,
@@ -25,6 +25,8 @@ spark.sql(
             e.stor_mw,
             e.other_mw,
             e.ingestion_timestamp_utc AS energy_ingestion_timestamp_utc,
+            w.source_area AS weather_source_area,
+            w.source_area_name AS weather_source_area_name,
             w.city,
             w.country_code,
             w.event_timestamp_utc AS weather_event_timestamp_utc,
@@ -37,24 +39,37 @@ spark.sql(
             w.weather_main,
             w.weather_description,
             w.ingestion_timestamp_utc AS weather_ingestion_timestamp_utc,
-            CAST((unix_timestamp(e.event_timestamp_utc) - unix_timestamp(w.event_timestamp_utc)) / 60 AS INT) AS weather_age_minutes,
-            CAST(ABS(unix_timestamp(e.event_timestamp_utc) - unix_timestamp(w.event_timestamp_utc)) / 60 AS INT) AS weather_time_delta_minutes,
+            CAST(
+                (unix_timestamp(e.event_timestamp_utc)
+                 - unix_timestamp(w.event_timestamp_utc)) / 60
+                AS INT
+            ) AS weather_age_minutes,
             ROW_NUMBER() OVER (
-                PARTITION BY e.resource_id, e.source_record_id, e.event_timestamp_utc
+                PARTITION BY
+                    e.source_area,
+                    e.resource_id,
+                    e.source_record_id,
+                    e.event_timestamp_utc
                 ORDER BY
-                    ABS(unix_timestamp(e.event_timestamp_utc) - unix_timestamp(w.event_timestamp_utc)),
-                    w.event_timestamp_utc DESC
+                    w.event_timestamp_utc DESC,
+                    w.ingestion_timestamp_utc DESC
             ) AS match_rank
         FROM silver_energy e
         LEFT JOIN silver_weather w
-            ON w.event_timestamp_utc BETWEEN e.event_timestamp_utc - INTERVAL 6 HOURS
-                                         AND e.event_timestamp_utc + INTERVAL 1 HOUR
+            ON e.source_area IS NOT NULL
+           AND e.source_area = w.source_area
+           AND w.event_timestamp_utc <= e.event_timestamp_utc
+           AND w.event_timestamp_utc >= e.event_timestamp_utc - INTERVAL 6 HOURS
     )
     SELECT
+        source_area,
+        source_area_name,
         resource_id,
         source_record_id,
         event_timestamp_utc,
         event_date_utc,
+        weather_source_area,
+        weather_source_area_name,
         city,
         country_code,
         demand_mw,
@@ -66,7 +81,7 @@ spark.sql(
         other_mw,
         weather_event_timestamp_utc,
         weather_age_minutes,
-        weather_time_delta_minutes,
+        weather_age_minutes AS weather_time_delta_minutes,
         temperature_c,
         feels_like_c,
         humidity_pct,
@@ -92,6 +107,8 @@ spark.sql(
         SELECT
             event_timestamp_utc,
             event_date_utc,
+            source_area,
+            source_area_name,
             city,
             country_code,
             resource_id,
@@ -111,7 +128,10 @@ spark.sql(
             weather_description,
             weather_age_minutes
         FROM gold_weather_demand_join
-        WHERE demand_mw IS NOT NULL
+        WHERE source_area IS NOT NULL
+          AND weather_source_area = source_area
+          AND weather_age_minutes BETWEEN 0 AND 360
+          AND demand_mw IS NOT NULL
           AND city IS NOT NULL
           AND COALESCE(temperature_c, feels_like_c) IS NOT NULL
           AND humidity_pct IS NOT NULL
@@ -120,6 +140,8 @@ spark.sql(
         SELECT
             event_timestamp_utc,
             event_date_utc,
+            source_area,
+            source_area_name,
             city,
             country_code,
             resource_id,
@@ -146,20 +168,20 @@ spark.sql(
             END AS is_weekend_utc,
             temperature * temperature AS temperature_sq,
             LAG(demand_mw, 1) OVER (
-                PARTITION BY resource_id, city
+                PARTITION BY source_area, resource_id, city
                 ORDER BY event_timestamp_utc
             ) AS demand_lag_1,
             LAG(temperature, 1) OVER (
-                PARTITION BY resource_id, city
+                PARTITION BY source_area, resource_id, city
                 ORDER BY event_timestamp_utc
             ) AS temperature_lag_1,
             AVG(demand_mw) OVER (
-                PARTITION BY resource_id, city
+                PARTITION BY source_area, resource_id, city
                 ORDER BY event_timestamp_utc
                 ROWS BETWEEN 11 PRECEDING AND CURRENT ROW
             ) AS demand_rolling_mean_12,
             AVG(temperature) OVER (
-                PARTITION BY resource_id, city
+                PARTITION BY source_area, resource_id, city
                 ORDER BY event_timestamp_utc
                 ROWS BETWEEN 11 PRECEDING AND CURRENT ROW
             ) AS temperature_rolling_mean_12
@@ -168,6 +190,8 @@ spark.sql(
     SELECT
         event_timestamp_utc,
         event_date_utc,
+        source_area,
+        source_area_name,
         city,
         country_code,
         resource_id,
@@ -211,6 +235,8 @@ spark.sql(
             event_timestamp_utc,
             DATE_TRUNC('hour', event_timestamp_utc) AS hour_bucket_utc,
             DATE_TRUNC('day', event_timestamp_utc) AS day_bucket_utc,
+            source_area,
+            source_area_name,
             city,
             country_code,
             resource_id,
@@ -224,21 +250,19 @@ spark.sql(
             wind_speed_mps,
             cloud_cover_pct,
             weather_main,
-            CASE
-                WHEN temperature < 15 THEN 15 - temperature
-                ELSE 0
-            END AS heating_degree_c,
-            CASE
-                WHEN temperature > 18 THEN temperature - 18
-                ELSE 0
-            END AS cooling_degree_c,
+            CASE WHEN temperature < 15 THEN 15 - temperature ELSE 0 END
+                AS heating_degree_c,
+            CASE WHEN temperature > 18 THEN temperature - 18 ELSE 0 END
+                AS cooling_degree_c,
             CASE
                 WHEN generation_mw > 0
-                    THEN (COALESCE(solar_mw, 0) + COALESCE(wind_mw, 0)) / generation_mw
+                    THEN (COALESCE(solar_mw, 0) + COALESCE(wind_mw, 0))
+                         / generation_mw
                 ELSE NULL
             END AS renewable_share
         FROM gold_feature_engineering
-        WHERE city IS NOT NULL
+        WHERE source_area IS NOT NULL
+          AND city IS NOT NULL
           AND resource_id IS NOT NULL
           AND demand_mw IS NOT NULL
     ),
@@ -248,6 +272,8 @@ spark.sql(
             hour_bucket_utc AS bucket_start_utc,
             hour_bucket_utc + INTERVAL 1 HOUR AS bucket_end_utc,
             CAST(hour_bucket_utc AS DATE) AS event_date_utc,
+            source_area,
+            source_area_name,
             city,
             country_code,
             resource_id,
@@ -272,7 +298,13 @@ spark.sql(
             AVG(cooling_degree_c) AS cooling_degree_avg_c,
             max_by(weather_main, event_timestamp_utc) AS latest_weather_main
         FROM base
-        GROUP BY hour_bucket_utc, city, country_code, resource_id
+        GROUP BY
+            hour_bucket_utc,
+            source_area,
+            source_area_name,
+            city,
+            country_code,
+            resource_id
     ),
     daily AS (
         SELECT
@@ -280,6 +312,8 @@ spark.sql(
             day_bucket_utc AS bucket_start_utc,
             day_bucket_utc + INTERVAL 1 DAY AS bucket_end_utc,
             CAST(day_bucket_utc AS DATE) AS event_date_utc,
+            source_area,
+            source_area_name,
             city,
             country_code,
             resource_id,
@@ -304,7 +338,13 @@ spark.sql(
             AVG(cooling_degree_c) AS cooling_degree_avg_c,
             max_by(weather_main, event_timestamp_utc) AS latest_weather_main
         FROM base
-        GROUP BY day_bucket_utc, city, country_code, resource_id
+        GROUP BY
+            day_bucket_utc,
+            source_area,
+            source_area_name,
+            city,
+            country_code,
+            resource_id
     )
     SELECT * FROM hourly
     UNION ALL

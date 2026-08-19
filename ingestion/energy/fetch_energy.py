@@ -13,6 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from ingestion.common.api_client import fetch_ckan_resource
 from ingestion.common.contract_validator import validate_payload
+from ingestion.common.source_area import attach_pipeline_metadata, validate_source_binding
 
 ENERGY_CONTRACT_PATH = PROJECT_ROOT / "data-contracts" / "energy_schema.json"
 
@@ -26,8 +27,8 @@ def load_config(config_path: Path | None = None):
         raise FileNotFoundError(
             f"Missing {config_path}. Create it from {template_path}."
         )
-    with open(config_path, "r") as f:
-        return yaml.safe_load(f)
+    with config_path.open("r", encoding="utf-8") as file_handle:
+        return yaml.safe_load(file_handle)
 
 
 def build_headers(api_config: dict) -> dict:
@@ -47,8 +48,20 @@ def build_headers(api_config: dict) -> dict:
     return headers
 
 
+def resolve_binding(config: dict) -> dict[str, str]:
+    params = config.get("api", {}).get("params", {})
+    resource_id = params.get("resource_id")
+    if not resource_id:
+        raise ValueError("Missing api.params.resource_id in config.yaml.")
+    return validate_source_binding(
+        config.get("source_area"),
+        nged_resource_id=resource_id,
+    )
+
+
 def fetch_energy(config: dict) -> dict:
     """Fetch one complete, bounded NGED electricity-demand snapshot."""
+    binding = resolve_binding(config)
     api_config = config["api"]
     base_url = api_config["base_url"].rstrip("/")
     endpoint = api_config["endpoint"].lstrip("/")
@@ -60,20 +73,21 @@ def fetch_energy(config: dict) -> dict:
     page_size = api_config.get("page_size", legacy_limit or 1000)
     max_records = api_config.get("max_records", 50_000)
 
-    return fetch_ckan_resource(
+    payload = fetch_ckan_resource(
         url=url,
         params=params,
         headers=headers,
         timeout_seconds=timeout_seconds,
         page_size=page_size,
         max_records=max_records,
-        validate_page=lambda payload: validate_payload(
-            payload,
+        validate_page=lambda page: validate_payload(
+            page,
             ENERGY_CONTRACT_PATH,
             "energy",
         ),
         request_get=requests.get,
     )
+    return attach_pipeline_metadata(payload, dataset_name="energy", binding=binding)
 
 
 def save_raw_data(data: dict):
@@ -83,8 +97,8 @@ def save_raw_data(data: dict):
     output_dir.mkdir(parents=True, exist_ok=True)
     file_path = output_dir / f"energy_{timestamp}.json"
 
-    with open(file_path, "w") as f:
-        json.dump(data, f, indent=2)
+    with file_path.open("w", encoding="utf-8") as file_handle:
+        json.dump(data, file_handle, indent=2)
 
     print(f"Saved raw energy data to {file_path}")
 
