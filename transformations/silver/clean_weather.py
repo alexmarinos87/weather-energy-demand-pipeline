@@ -13,6 +13,10 @@ WEATHER_CANONICAL_COLUMNS = [
     "source_dataset",
     "source_file",
     "source_record_id",
+    "source_area",
+    "source_area_name",
+    "metadata_contract_version",
+    "weather_proxy_city",
     "event_timestamp_utc",
     "ingestion_timestamp_utc",
     "event_date_utc",
@@ -41,14 +45,23 @@ def _parse_ingestion_timestamp(filepath: Path) -> datetime:
         return datetime.fromtimestamp(filepath.stat().st_mtime, tz=timezone.utc)
 
 
-def _build_record(raw_json: dict[str, Any], source_file: str, ingestion_ts: datetime) -> dict[str, Any]:
+def _build_record(
+    raw_json: dict[str, Any],
+    source_file: str,
+    ingestion_ts: datetime,
+) -> dict[str, Any]:
     weather_summary = raw_json.get("weather", [{}])[0] or {}
+    metadata = raw_json.get("_pipeline_metadata") or {}
     event_ts = pd.to_datetime(raw_json["dt"], unit="s", utc=True)
 
     return {
         "source_dataset": "weather",
         "source_file": source_file,
         "source_record_id": raw_json.get("id"),
+        "source_area": metadata.get("source_area"),
+        "source_area_name": metadata.get("source_area_name"),
+        "metadata_contract_version": metadata.get("contract_version"),
+        "weather_proxy_city": metadata.get("weather_proxy_city"),
         "event_timestamp_utc": event_ts,
         "ingestion_timestamp_utc": pd.Timestamp(ingestion_ts),
         "event_date_utc": event_ts.strftime("%Y-%m-%d"),
@@ -72,8 +85,8 @@ def transform_weather_files(raw_dir: Path = RAW_DIR) -> pd.DataFrame:
     records: list[dict[str, Any]] = []
     for filepath in sorted(raw_dir.glob("*.json")):
         try:
-            with filepath.open("r") as f:
-                raw_data = json.load(f)
+            with filepath.open("r", encoding="utf-8") as file_handle:
+                raw_data = json.load(file_handle)
             records.append(
                 _build_record(
                     raw_json=raw_data,
@@ -89,7 +102,10 @@ def transform_weather_files(raw_dir: Path = RAW_DIR) -> pd.DataFrame:
 
     df = pd.DataFrame(records)[WEATHER_CANONICAL_COLUMNS]
     df = df.sort_values("ingestion_timestamp_utc")
-    df = df.drop_duplicates(subset=["city", "event_timestamp_utc"], keep="last")
+    df = df.drop_duplicates(
+        subset=["source_area", "city", "event_timestamp_utc"],
+        keep="last",
+    )
     return df.reset_index(drop=True)
 
 
@@ -103,7 +119,6 @@ def save_clean_data(df: pd.DataFrame, output_path: Path = SILVER_DIR):
     for event_date, partition_df in df.groupby("event_date_utc", sort=True):
         output_dir = output_path / f"dt={event_date}"
         output_dir.mkdir(parents=True, exist_ok=True)
-
         output_file = output_dir / f"weather_clean_{run_timestamp}.parquet"
         partition_df.to_parquet(output_file, index=False)
         print(f"Saved cleaned weather data to {output_file}")

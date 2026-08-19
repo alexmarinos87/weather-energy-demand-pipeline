@@ -1,37 +1,40 @@
-# Fabric Monitoring Runbook
+# Fabric monitoring runbook
 
-## Daily Checks
+## Daily checks
 
-- Review the latest Fabric Data Factory pipeline run status.
-- Query `dq_run_results` for failed checks.
-- Confirm `gold_feature_engineering` contains fresh rows for the expected energy resource.
-- Review freshness warnings for silver and gold tables.
-- Confirm source API failures did not repeat across retries.
+- Review the latest Data Factory pipeline status.
+- Query `dq_run_results` for errors and warnings.
+- Confirm expected `source_area` values in silver and gold.
+- Confirm no cross-area or future-weather match failures.
+- Review unmatched-weather and freshness warnings.
+- Confirm complete-snapshot pagination metadata on recent energy raw files.
 
 ## Useful SQL
 
 ```sql
-SELECT TOP (50)
+SELECT TOP (100)
     run_timestamp_utc,
     check_name,
     severity,
     failed_rows,
     status
 FROM dbo.dq_run_results
-ORDER BY run_timestamp_utc DESC, check_name;
+ORDER BY run_timestamp_utc DESC, severity, check_name;
 ```
 
 ```sql
 SELECT
-    MAX(event_timestamp_utc) AS latest_energy_timestamp_utc,
+    source_area,
+    MAX(event_timestamp_utc) AS latest_feature_timestamp_utc,
     COUNT_BIG(*) AS feature_rows
-FROM dbo.gold_feature_engineering;
+FROM dbo.gold_feature_engineering
+GROUP BY source_area;
 ```
 
 ## Triage
 
-- Ingestion failures usually mean API credentials, quota, or source availability changed.
-- Silver failures usually mean raw payload shape changed and the contract gate needs review.
-- Gold failures usually mean required silver fields are missing or timestamp alignment has drifted.
-- Freshness warnings usually mean the source API is delayed, the pipeline schedule paused, or no new records matched the expected resource.
-- Data quality failures should be resolved before refreshing downstream reports.
+- Source-binding failures mean `SOURCE_AREA`, `WEATHER_CITY`, and the NGED resource disagree.
+- Ingestion failures usually indicate credentials, quota, source availability, contract drift, or incomplete CKAN pagination.
+- Unscoped-source warnings indicate legacy raw files without `_pipeline_metadata`; retain them for lineage, but do not use them in scoped gold features.
+- Future-weather or cross-area failures are blocking correctness defects.
+- Unmatched-weather warnings usually indicate source timing gaps or a paused weather feed.

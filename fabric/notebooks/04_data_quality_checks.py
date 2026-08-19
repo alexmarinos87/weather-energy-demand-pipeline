@@ -1,7 +1,5 @@
 # Fabric notebook source: 04_data_quality_checks
-#
-# Runs required data quality checks and fails the pipeline when a required
-# check has failed rows.
+# Required failures stop the pipeline; warnings remain queryable in dq_run_results.
 
 from datetime import datetime, timezone
 from typing import Any
@@ -80,14 +78,24 @@ def build_checks(max_expected_data_lag_hours: int | None = None) -> list[dict[st
             """,
         },
         {
+            "check_name": "silver_weather_unscoped_source_area",
+            "severity": "warn",
+            "sql": "SELECT COUNT(*) AS failed_rows FROM silver_weather WHERE source_area IS NULL",
+        },
+        {
+            "check_name": "silver_energy_unscoped_source_area",
+            "severity": "warn",
+            "sql": "SELECT COUNT(*) AS failed_rows FROM silver_energy WHERE source_area IS NULL",
+        },
+        {
             "check_name": "silver_weather_duplicates",
             "severity": "error",
             "sql": """
                 SELECT COUNT(*) AS failed_rows
                 FROM (
-                    SELECT city, event_timestamp_utc
+                    SELECT source_area, city, event_timestamp_utc
                     FROM silver_weather
-                    GROUP BY city, event_timestamp_utc
+                    GROUP BY source_area, city, event_timestamp_utc
                     HAVING COUNT(*) > 1
                 ) duplicates
             """,
@@ -98,9 +106,9 @@ def build_checks(max_expected_data_lag_hours: int | None = None) -> list[dict[st
             "sql": """
                 SELECT COUNT(*) AS failed_rows
                 FROM (
-                    SELECT resource_id, source_record_id, event_timestamp_utc
+                    SELECT source_area, resource_id, source_record_id, event_timestamp_utc
                     FROM silver_energy
-                    GROUP BY resource_id, source_record_id, event_timestamp_utc
+                    GROUP BY source_area, resource_id, source_record_id, event_timestamp_utc
                     HAVING COUNT(*) > 1
                 ) duplicates
             """,
@@ -116,12 +124,43 @@ def build_checks(max_expected_data_lag_hours: int | None = None) -> list[dict[st
             "sql": _freshness_sql("silver_energy", "event_timestamp_utc", lag_hours),
         },
         {
+            "check_name": "gold_weather_cross_area_match",
+            "severity": "error",
+            "sql": """
+                SELECT COUNT(*) AS failed_rows
+                FROM gold_weather_demand_join
+                WHERE weather_source_area IS NOT NULL
+                  AND weather_source_area <> source_area
+            """,
+        },
+        {
+            "check_name": "gold_weather_future_match",
+            "severity": "error",
+            "sql": """
+                SELECT COUNT(*) AS failed_rows
+                FROM gold_weather_demand_join
+                WHERE weather_event_timestamp_utc > event_timestamp_utc
+                   OR weather_age_minutes < 0
+            """,
+        },
+        {
+            "check_name": "gold_weather_unmatched",
+            "severity": "warn",
+            "sql": """
+                SELECT COUNT(*) AS failed_rows
+                FROM gold_weather_demand_join
+                WHERE source_area IS NOT NULL
+                  AND weather_event_timestamp_utc IS NULL
+            """,
+        },
+        {
             "check_name": "gold_feature_required_fields",
             "severity": "error",
             "sql": """
                 SELECT COUNT(*) AS failed_rows
                 FROM gold_feature_engineering
                 WHERE event_timestamp_utc IS NULL
+                   OR source_area IS NULL
                    OR city IS NULL
                    OR temperature IS NULL
                    OR humidity IS NULL
@@ -144,7 +183,7 @@ def build_checks(max_expected_data_lag_hours: int | None = None) -> list[dict[st
                 SELECT COUNT(*) AS failed_rows
                 FROM gold_weather_demand_join
                 WHERE weather_event_timestamp_utc IS NOT NULL
-                  AND ABS(weather_time_delta_minutes) > 360
+                  AND weather_age_minutes > 360
             """,
         },
     ]
@@ -175,14 +214,13 @@ def run_checks(spark_session) -> list[dict[str, Any]]:
         .option("mergeSchema", "true")
         .saveAsTable("dq_run_results")
     )
-
     results_df.orderBy("severity", "check_name").show(truncate=False)
 
     blocking_failures = [
-        result for result in results
+        result
+        for result in results
         if result["severity"] == "error" and result["failed_rows"] > 0
     ]
-
     if blocking_failures:
         failure_text = ", ".join(
             f"{result['check_name']}={result['failed_rows']}"

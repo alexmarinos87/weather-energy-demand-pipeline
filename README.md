@@ -1,150 +1,97 @@
+# Weather–Energy Demand Pipeline
+
 ## Problem
 
-Energy demand is highly sensitive to weather conditions, yet weather and energy data are often siloed, updated at different frequencies, and consumed manually. This makes it difficult to analyse demand patterns consistently and at scale.
-
-Manual data extraction introduces **auditability and traceability issues**, as results can vary depending on when and how the data is pulled. Over time, this leads to inconsistencies and reduced trust in analysis.
-
-Additionally, the lack of integrated, near real-time data can create **operational blind spots**, forcing grid operators and analysts to react to changes in demand rather than anticipate them.
-
----
+Weather and electricity-demand data arrive from different systems, at different frequencies, and with different spatial meanings. Combining them without explicit source identity can produce untraceable analysis, cross-region joins, or features that accidentally use weather observations from the future.
 
 ## Solution
 
-This project implements a cloud-based data pipeline using **Microsoft Fabric** to ingest live weather data and electricity demand data, transform it into analytics-ready Delta tables, and produce features suitable for demand analysis and forecasting.
+This project implements a Microsoft Fabric medallion pipeline that:
 
-The pipeline addresses auditability and traceability challenges by:
-- Automating data ingestion
-- Storing immutable raw data in OneLake
-- Applying version-controlled transformations
-- Producing consistent, reproducible outputs
+- ingests OpenWeather observations and complete, bounded NGED Live Data snapshots;
+- validates every source response against versioned contracts before writing raw data;
+- binds each NGED licence-area resource to an explicit project weather proxy;
+- propagates source-area and file-level provenance through silver tables;
+- joins only same-area weather at or before each demand timestamp;
+- builds Delta feature and aggregation tables for analysis and forecasting;
+- records blocking and warning data-quality results in `dq_run_results`.
 
-By combining weather data with energy demand data, the pipeline enables detection of **demand sensitivity shifts** and comparison of forecast versus actual demand. This supports more proactive decision-making for grid operators, analysts, and energy market participants.
+The active cloud target is Microsoft Fabric: OneLake, Lakehouse Delta tables, Spark notebooks, Data Factory orchestration, the SQL analytics endpoint, and Power BI-ready outputs.
 
----
+## Data sources and spatial contract
 
-## Data Sources
+- **OpenWeather API** — current weather observations.
+- **National Grid Electricity Distribution Connected Data Portal** — near-real-time demand, generation, and import data split by licence area.
 
-- **OpenWeather API** – live and historical weather data (temperature, humidity, wind, precipitation)
-- **National Grid Electricity Distribution (NGED) Connected Data Portal** – near-real-time demand, generation, and import data by licence area
+`data-contracts/source_areas.json` defines the allowed bindings:
 
----
+| Source area | NGED resource | Weather proxy |
+| --- | --- | --- |
+| East Midlands | `92d3431c-15d7-4aa6-ad34-2335596a026c` | `Nottingham,GB` |
+| South Wales | `38b81427-a2df-42f2-befa-4d6fe9b54c98` | `Cardiff,GB` |
+| South West | `85aaa199-15df-40ec-845f-6c61cbedc20f` | `Bristol,GB` |
+| West Midlands | `1c3447df-37d7-4fb4-9f99-0e2a0d691dbe` | `Birmingham,GB` |
 
-## Skills Demonstrated
+The cities are representative project proxies. They are not official NGED mappings and do not represent all weather conditions across a licence area.
 
-- Data engineering fundamentals (API ingestion, layered data modeling)
-- Cloud-native architecture with Microsoft Fabric, OneLake, Lakehouse, Data Factory, and notebooks
-- SQL, PySpark, and Delta Lake data modeling
-- Domain-aware feature engineering (weather–demand relationships)
-- Data quality and reliability
-- Automation and reproducibility
-- Technical documentation
+## Data flow
 
----
+```text
+OpenWeather + NGED Live Data
+        ↓ contract and source-area validation
+OneLake immutable raw JSON + provenance metadata
+        ↓ typed parsing and deduplication
+silver_weather + silver_energy
+        ↓ same-area, past-only weather matching
+ gold_weather_demand_join
+        ↓ lags, rolling features and domain features
+ gold_feature_engineering
+        ↓ hourly and daily summaries
+ gold_demand_aggregation
+        ↓
+SQL endpoint / Power BI / forecasting experiments
+```
 
-## Microsoft Fabric Migration
+For each demand observation, the gold join selects the latest weather observation from the same `source_area` whose timestamp is no later than demand time and no more than six hours old.
 
-The active cloud target is now Microsoft Fabric.
-
-- Storage: OneLake Lakehouse files and Delta tables
-- Orchestration: Fabric Data Factory pipeline schedule
-- Compute: Fabric notebooks using Spark
-- Serving: Lakehouse SQL analytics endpoint and Power BI-ready gold tables
-- Monitoring: Fabric monitoring hub plus data quality checks written to Delta
-
-Fabric migration assets are in:
-
-- `fabric/README.md`
-- `fabric/notebooks/`
-- `fabric/sql/`
-- `fabric/pipelines/`
-- `architecture/data_flow.md`
-- `orchestration/schedules.md`
-- `monitoring/data_quality_checks.sql`
-
----
-
-## Local Run (Development Quickstart)
-
-The local Python entry points are retained for development and contract testing. Fabric notebooks are the canonical cloud runtime.
-
-### Prereqs
-
-- Python 3.10+
-- `pip` installed (`python3 -m pip --version`)
-
-### Setup
-
-1. Create your weather config:
+## Local development quickstart
 
 ```bash
 cp ingestion/weather/config.example.yaml ingestion/weather/config.yaml
-```
-
-2. Create your energy config:
-
-```bash
 cp ingestion/energy/config.example.yaml ingestion/energy/config.yaml
-```
-
-3. Set API keys in `.env`:
-
-```
-OPENWEATHER_API_KEY=your_key
-NATIONAL_GRID_API_TOKEN=your_token
-```
-
-4. Set the NGED energy `resource_id` in `ingestion/energy/config.yaml`.
-   This repo uses the **Live Data** dataset, which is split by licence area.
-   Pick one resource (East Midlands, South Wales, South West, or West Midlands).
-
-5. Install dependencies:
-
-```bash
 python3 -m pip install -r requirements.txt
 ```
 
-### Run
+Set credentials outside the repository:
 
 ```bash
-set -a
-source .env
-set +a
-
-python3 ingestion/weather/fetch_weather.py
-python3 ingestion/energy/fetch_energy.py
+export OPENWEATHER_API_KEY=...
+export NATIONAL_GRID_API_TOKEN=...
 ```
 
-Raw outputs are written to:
-
-- `data/raw/weather/`
-- `data/raw/energy/`
-
-Energy ingestion follows CKAN pages in ascending `_id` order until the record total reported by the first page is complete. The raw energy file contains the reassembled snapshot plus pagination evidence. `page_size` controls each request and `max_records` is a deliberate safety bound; the run fails instead of silently storing a partial snapshot when the bound is exceeded.
-
-### Quick Win Implemented: Contract Gate on Ingestion
-
-Local and Fabric ingestion jobs validate every API page against versioned contracts before writing raw files:
-
-- `data-contracts/weather_schema.json`
-- `data-contracts/energy_schema.json`
-
-If a payload drifts (missing required fields or invalid types), ingestion fails fast and no raw file is written.
-
-For Fabric runs, upload these files to `Files/data-contracts/` in the Lakehouse or pass `CONTRACTS_ROOT` to the ingestion notebook.
-
-Run tests for this gate:
+Keep the same `source_area` in both config files and use the matching resource/city from the table above. Then run:
 
 ```bash
+python3 ingestion/weather/fetch_weather.py
+python3 ingestion/energy/fetch_energy.py
+python3 transformations/silver/clean_weather.py
+python3 transformations/silver/clean_energy.py
 pytest -q
 ```
 
----
+Energy ingestion requests CKAN pages in ascending `_id` order until the total reported by the first page is complete. It fails rather than silently publishing a partial snapshot when ordering, totals, resource identity, or the explicit record bound is violated.
 
-## Fabric Run Order
+## Fabric run order
 
-1. Create a Fabric workspace and Lakehouse named `weather_energy_lakehouse`.
-2. Create a Fabric Environment from `fabric/environment.yml`.
-3. Import the notebook sources in `fabric/notebooks/` and attach the Lakehouse.
-4. Create a Fabric Data Factory pipeline following `fabric/pipelines/weather_energy_demand_pipeline.md`.
-5. Add the SQL endpoint views from `fabric/sql/gold_views_tsql.sql` if analysts need stable SQL view names.
-6. Schedule the pipeline using `orchestration/schedules.md`.
+1. Create and attach the `weather_energy_lakehouse` Lakehouse.
+2. Upload all files in `data-contracts/` to `Files/data-contracts/`.
+3. Import the notebook sources in `fabric/notebooks/`.
+4. Create `weather_energy_demand_pipeline` from `fabric/pipelines/weather_energy_demand_pipeline.md`.
+5. Supply secure credentials and a consistent `SOURCE_AREA`, `WEATHER_CITY`, and `NATIONAL_GRID_RESOURCE_ID`.
+6. Run ingestion, silver, gold, and data quality in order.
+7. Optionally create pass-through SQL views from `fabric/sql/gold_views_tsql.sql`.
+8. Enable the schedule only after source quotas and Fabric capacity are confirmed.
+
+## Current product boundary
+
+The repository now produces spatially and temporally valid forecasting features, but it does not yet train or evaluate a demand-forecasting model. A chronological baseline/backtesting layer is the next product increment.

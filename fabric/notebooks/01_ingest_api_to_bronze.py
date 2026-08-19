@@ -1,7 +1,5 @@
 # Fabric notebook source: 01_ingest_api_to_bronze
-#
 # Attach the Lakehouse `weather_energy_lakehouse` before running.
-# Pipeline parameters may override the defaults below.
 
 import json
 import os
@@ -16,7 +14,8 @@ from jsonschema import Draft202012Validator
 
 
 DATASET = "all"  # all, weather, or energy
-WEATHER_CITY = "London,GB"
+SOURCE_AREA = "east_midlands"
+WEATHER_CITY = "Nottingham,GB"
 OPENWEATHER_API_KEY = ""
 NATIONAL_GRID_API_TOKEN = ""
 NATIONAL_GRID_RESOURCE_ID = ""
@@ -31,11 +30,16 @@ NATIONAL_GRID_BASE_URL = "https://connecteddata.nationalgrid.co.uk/api/3/action"
 CONTRACT_FILENAMES = {
     "weather": "weather_schema.json",
     "energy": "energy_schema.json",
+    "source_areas": "source_areas.json",
 }
 
 
 class CkanPaginationError(RuntimeError):
     """Raised when a CKAN resource cannot be retrieved completely."""
+
+
+class SourceAreaError(ValueError):
+    """Raised when configured weather and energy sources describe different areas."""
 
 
 def _get_parameter(name: str, default: Any) -> Any:
@@ -87,17 +91,12 @@ def _candidate_contract_roots() -> list[Path]:
     if "__file__" in globals():
         roots.append(Path(__file__).resolve().parents[2] / "data-contracts")
 
-    roots.extend(
-        [
-            Path.cwd() / "data-contracts",
-            Path.cwd().parent / "data-contracts",
-        ]
-    )
+    roots.extend([Path.cwd() / "data-contracts", Path.cwd().parent / "data-contracts"])
     return _unique_paths(roots)
 
 
-def _resolve_contract_path(dataset_name: str) -> Path:
-    contract_filename = CONTRACT_FILENAMES[dataset_name]
+def _resolve_contract_path(contract_name: str) -> Path:
+    contract_filename = CONTRACT_FILENAMES[contract_name]
     searched_paths = []
     for root in _candidate_contract_roots():
         contract_path = root / contract_filename
@@ -116,9 +115,8 @@ def _resolve_contract_path(dataset_name: str) -> Path:
 
 @lru_cache(maxsize=8)
 def _get_validator(contract_path: str) -> Draft202012Validator:
-    with Path(contract_path).open("r") as f:
-        schema = json.load(f)
-
+    with Path(contract_path).open("r", encoding="utf-8") as file_handle:
+        schema = json.load(file_handle)
     Draft202012Validator.check_schema(schema)
     return Draft202012Validator(schema)
 
@@ -127,25 +125,93 @@ def _validate_payload(payload: dict[str, Any], dataset_name: str) -> None:
     contract_path = _resolve_contract_path(dataset_name)
     validator = _get_validator(str(contract_path.resolve()))
     errors = sorted(validator.iter_errors(payload), key=lambda err: list(err.absolute_path))
-
     if not errors:
         return
 
     lines = [
-        (
-            f"{dataset_name} payload failed contract "
-            f"{contract_path.name} with {len(errors)} issue(s):"
-        )
+        f"{dataset_name} payload failed contract {contract_path.name} "
+        f"with {len(errors)} issue(s):"
     ]
-
     for err in errors[:5]:
         path = ".".join(str(item) for item in err.absolute_path) or "<root>"
         lines.append(f"- {path}: {err.message}")
-
     if len(errors) > 5:
         lines.append(f"- ... {len(errors) - 5} additional issue(s)")
-
     raise ValueError("\n".join(lines))
+
+
+@lru_cache(maxsize=4)
+def _load_source_area_contract(contract_path: str) -> dict[str, Any]:
+    with Path(contract_path).open("r", encoding="utf-8") as file_handle:
+        contract = json.load(file_handle)
+    if not contract.get("contract_version") or not isinstance(contract.get("areas"), dict):
+        raise SourceAreaError("source_areas.json is missing its versioned areas mapping.")
+    return contract
+
+
+def _normalize_source_area(value: Any) -> str:
+    if value is None:
+        raise SourceAreaError("Missing SOURCE_AREA pipeline parameter.")
+    normalized = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+    if not normalized:
+        raise SourceAreaError("Missing SOURCE_AREA pipeline parameter.")
+    return normalized
+
+
+def _source_area_binding(
+    *,
+    resource_id: str | None = None,
+    weather_city: str | None = None,
+) -> dict[str, str]:
+    contract_path = _resolve_contract_path("source_areas")
+    contract = _load_source_area_contract(str(contract_path.resolve()))
+    source_area = _normalize_source_area(_get_parameter("SOURCE_AREA", SOURCE_AREA))
+    area = contract["areas"].get(source_area)
+    if not isinstance(area, dict):
+        supported = ", ".join(sorted(contract["areas"]))
+        raise SourceAreaError(
+            f"Unsupported SOURCE_AREA={source_area!r}. Supported values: {supported}."
+        )
+
+    binding = {
+        "contract_version": str(contract["contract_version"]),
+        "source_area": source_area,
+        "source_area_name": str(area["display_name"]),
+        "nged_resource_id": str(area["nged_resource_id"]),
+        "weather_proxy_city": str(area["weather_proxy_city"]),
+    }
+    if resource_id is not None and str(resource_id).strip() != binding["nged_resource_id"]:
+        raise SourceAreaError(
+            f"SOURCE_AREA={source_area!r} requires NGED resource "
+            f"{binding['nged_resource_id']!r}, got {resource_id!r}."
+        )
+    if (
+        weather_city is not None
+        and str(weather_city).strip().casefold()
+        != binding["weather_proxy_city"].casefold()
+    ):
+        raise SourceAreaError(
+            f"SOURCE_AREA={source_area!r} requires weather proxy "
+            f"{binding['weather_proxy_city']!r}, got {weather_city!r}."
+        )
+    return binding
+
+
+def _attach_pipeline_metadata(
+    payload: dict[str, Any],
+    dataset_name: str,
+    binding: dict[str, str],
+) -> dict[str, Any]:
+    enriched = deepcopy(payload)
+    enriched["_pipeline_metadata"] = {
+        "contract_version": binding["contract_version"],
+        "dataset": dataset_name,
+        "source_area": binding["source_area"],
+        "source_area_name": binding["source_area_name"],
+        "nged_resource_id": binding["nged_resource_id"],
+        "weather_proxy_city": binding["weather_proxy_city"],
+    }
+    return enriched
 
 
 def _fetch_ckan_resource(
@@ -208,14 +274,9 @@ def _fetch_ckan_resource(
             raise CkanPaginationError("CKAN returned an unexpected resource_id.")
 
         reported_total = result.get("total")
-        if (
-            isinstance(reported_total, bool)
-            or not isinstance(reported_total, int)
-            or reported_total < 0
-        ):
+        if isinstance(reported_total, bool) or not isinstance(reported_total, int) or reported_total < 0:
             raise CkanPaginationError("CKAN result.total must be non-negative.")
         latest_reported_total = reported_total
-
         page_records = result.get("records")
         if not isinstance(page_records, list):
             raise CkanPaginationError("CKAN result.records must be an array.")
@@ -229,15 +290,11 @@ def _fetch_ckan_resource(
                 )
             first_payload = deepcopy(payload)
         elif reported_total < snapshot_total:
-            raise CkanPaginationError(
-                "CKAN result.total decreased during pagination."
-            )
+            raise CkanPaginationError("CKAN result.total decreased during pagination.")
 
         if snapshot_total == 0:
             if page_records:
-                raise CkanPaginationError(
-                    "CKAN reported zero total records but returned data."
-                )
+                raise CkanPaginationError("CKAN reported zero total records but returned data.")
             break
         if not page_records:
             raise CkanPaginationError(
@@ -245,9 +302,7 @@ def _fetch_ckan_resource(
                 "the snapshot was complete."
             )
         if len(page_records) > requested_limit:
-            raise CkanPaginationError(
-                "CKAN returned more records than the requested page limit."
-            )
+            raise CkanPaginationError("CKAN returned more records than requested.")
 
         for record in page_records:
             if not isinstance(record, dict):
@@ -260,13 +315,10 @@ def _fetch_ckan_resource(
                     f"CKAN record _id={record_id} appeared more than once."
                 )
             if last_id is not None and record_id <= last_id:
-                raise CkanPaginationError(
-                    "CKAN pages were not ordered by ascending _id."
-                )
+                raise CkanPaginationError("CKAN pages were not ordered by ascending _id.")
             seen_ids.add(record_id)
             last_id = record_id
             records.append(record)
-
         page_count += 1
 
     if first_payload is None or snapshot_total is None:
@@ -298,23 +350,48 @@ def _write_raw_json(dataset_name: str, payload: dict[str, Any]) -> str:
     now_utc = datetime.now(timezone.utc)
     timestamp = now_utc.strftime("%Y%m%d_%H%M%S")
     ingestion_date = now_utc.strftime("%Y-%m-%d")
-    files_root = Path(
-        str(_get_parameter("LAKEHOUSE_FILES_ROOT", LAKEHOUSE_FILES_ROOT))
-    )
+    files_root = Path(str(_get_parameter("LAKEHOUSE_FILES_ROOT", LAKEHOUSE_FILES_ROOT)))
     output_dir = files_root / "raw" / dataset_name / f"ingestion_date={ingestion_date}"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{dataset_name}_{timestamp}.json"
-    with output_path.open("w") as f:
-        json.dump(payload, f, indent=2)
+    with output_path.open("w", encoding="utf-8") as file_handle:
+        json.dump(payload, file_handle, indent=2)
     return str(output_path)
 
 
+def _energy_page_size() -> int:
+    legacy_limit = _get_parameter("ENERGY_LIMIT", ENERGY_LIMIT)
+    configured = legacy_limit if legacy_limit not in (None, "") else _get_parameter(
+        "ENERGY_PAGE_SIZE", ENERGY_PAGE_SIZE
+    )
+    return _positive_int(configured, "ENERGY_PAGE_SIZE")
+
+
+def _configured_resource_id() -> str:
+    resource_id = str(
+        _get_parameter("NATIONAL_GRID_RESOURCE_ID", NATIONAL_GRID_RESOURCE_ID)
+    ).strip()
+    if not resource_id:
+        raise ValueError("Missing NATIONAL_GRID_RESOURCE_ID pipeline parameter.")
+    return resource_id
+
+
+def _preflight(dataset: str) -> None:
+    if dataset in {"all", "weather"}:
+        _source_area_binding(
+            weather_city=str(_get_parameter("WEATHER_CITY", WEATHER_CITY))
+        )
+    if dataset in {"all", "energy"}:
+        _source_area_binding(resource_id=_configured_resource_id())
+
+
 def fetch_weather() -> dict[str, Any]:
+    city = str(_get_parameter("WEATHER_CITY", WEATHER_CITY))
+    binding = _source_area_binding(weather_city=city)
     api_key = _required_secret(
         _get_parameter("OPENWEATHER_API_KEY", OPENWEATHER_API_KEY),
         "OPENWEATHER_API_KEY",
     )
-    city = _get_parameter("WEATHER_CITY", WEATHER_CITY)
     response = requests.get(
         f"{OPENWEATHER_BASE_URL}/weather",
         params={"q": city, "appid": api_key, "units": "metric"},
@@ -323,29 +400,17 @@ def fetch_weather() -> dict[str, Any]:
     response.raise_for_status()
     payload = response.json()
     _validate_payload(payload, "weather")
-    return payload
-
-
-def _energy_page_size() -> int:
-    legacy_limit = _get_parameter("ENERGY_LIMIT", ENERGY_LIMIT)
-    configured = (
-        legacy_limit
-        if legacy_limit not in (None, "")
-        else _get_parameter("ENERGY_PAGE_SIZE", ENERGY_PAGE_SIZE)
-    )
-    return _positive_int(configured, "ENERGY_PAGE_SIZE")
+    return _attach_pipeline_metadata(payload, "weather", binding)
 
 
 def fetch_energy() -> dict[str, Any]:
+    resource_id = _configured_resource_id()
+    binding = _source_area_binding(resource_id=resource_id)
     api_token = _required_secret(
         _get_parameter("NATIONAL_GRID_API_TOKEN", NATIONAL_GRID_API_TOKEN),
         "NATIONAL_GRID_API_TOKEN",
     )
-    resource_id = _get_parameter("NATIONAL_GRID_RESOURCE_ID", NATIONAL_GRID_RESOURCE_ID)
-    if not resource_id:
-        raise ValueError("Missing NATIONAL_GRID_RESOURCE_ID pipeline parameter.")
-
-    return _fetch_ckan_resource(
+    payload = _fetch_ckan_resource(
         url=f"{NATIONAL_GRID_BASE_URL}/datastore_search",
         resource_id=resource_id,
         api_token=api_token,
@@ -354,9 +419,10 @@ def fetch_energy() -> dict[str, Any]:
             _get_parameter("ENERGY_MAX_RECORDS", ENERGY_MAX_RECORDS),
             "ENERGY_MAX_RECORDS",
         ),
-        validate_page=lambda payload: _validate_payload(payload, "energy"),
+        validate_page=lambda page: _validate_payload(page, "energy"),
         request_get=requests.get,
     )
+    return _attach_pipeline_metadata(payload, "energy", binding)
 
 
 def main() -> list[str]:
@@ -364,6 +430,7 @@ def main() -> list[str]:
     if dataset not in {"all", "weather", "energy"}:
         raise ValueError("DATASET must be one of: all, weather, energy")
 
+    _preflight(dataset)
     written_paths: list[str] = []
     if dataset in {"all", "weather"}:
         written_paths.append(_write_raw_json("weather", fetch_weather()))

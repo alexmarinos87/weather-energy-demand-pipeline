@@ -1,3 +1,4 @@
+source_area: "east_midlands"
 api:
   base_url: "https://connecteddata.nationalgrid.co.uk/api/3/action"
   endpoint: "datastore_search"
@@ -7,5 +8,4 @@ api:
   page_size: 1000
   max_records: 50000
   params:
-    # Live Data (NGED) - East Midlands resource
     resource_id: "92d3431c-15d7-4aa6-ad34-2335596a026c"

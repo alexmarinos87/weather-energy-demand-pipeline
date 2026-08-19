@@ -1,76 +1,53 @@
-# Microsoft Fabric Data Flow
+# Microsoft Fabric data flow
 
-This project now targets Microsoft Fabric as the managed analytics platform.
-
-## Target Architecture
+## Target architecture
 
 ```text
-OpenWeather API             NGED Connected Data API
-       |                                  |
-       | Fabric notebook HTTP ingestion   |
-       | with JSON contract validation    |
-       v                                  v
-OneLake Lakehouse Files: raw/weather and raw/energy
-       |
-       | Fabric Spark notebook validation, parsing, deduplication
+OpenWeather API                    NGED Connected Data API
+       |                                     |
+       | source-area preflight + contracts   |
+       v                                     v
+OneLake Files/raw/weather and Files/raw/energy
+       | immutable JSON with _pipeline_metadata
        v
-Lakehouse Delta tables: silver_weather and silver_energy
-       |
-       | Fabric Spark notebook joins, features, aggregates
+Fabric Spark: parse, type, deduplicate, retain provenance
        v
-Lakehouse Delta tables: gold_weather_demand_join,
-                       gold_feature_engineering,
-                       gold_demand_aggregation
-       |
-       | SQL analytics endpoint / Power BI semantic model
+silver_weather -------------------- silver_energy
+       | same source_area; weather <= demand; age <= 6 hours
        v
-Analyst queries, dashboards, forecasting features
+gold_weather_demand_join
+       |
+       | lag, rolling, calendar and weather-degree features
+       v
+gold_feature_engineering
+       |
+       v
+gold_demand_aggregation
+       |
+       v
+SQL endpoint pass-through views / Power BI / model experiments
 ```
 
-## Medallion Layout
+## Source identity
 
-Raw files are immutable source captures:
+`data-contracts/source_areas.json` is the canonical project mapping between an NGED Live Data resource and a representative OpenWeather city. Ingestion writes the contract version, source-area key, display name, NGED resource ID, and weather proxy city into `_pipeline_metadata`.
 
-- `Files/raw/weather/ingestion_date=YYYY-MM-DD/weather_YYYYMMDD_HHMMSS.json`
-- `Files/raw/energy/ingestion_date=YYYY-MM-DD/energy_YYYYMMDD_HHMMSS.json`
+Silver retains this provenance. Historical raw files without metadata remain readable and receive a null `source_area`; data-quality checks warn about them, and SQL null semantics prevent them from joining into scoped gold features.
 
-The energy capture is a deterministic, bounded CKAN snapshot assembled in ascending `_id` order. Pagination metadata records the page count, page size, starting source total, finishing source total, and completeness state.
+## Causal matching rule
 
-Bronze ingestion validates API responses against:
+A demand record may match only a weather record that:
 
-- `Files/data-contracts/weather_schema.json`
-- `Files/data-contracts/energy_schema.json`
+1. has the same non-null `source_area`;
+2. occurred at or before the demand timestamp; and
+3. is no more than six hours old.
 
-Silver tables are canonical, typed, and deduplicated:
+The latest eligible observation wins, with ingestion timestamp as a deterministic tie-breaker. `weather_age_minutes` remains in gold for observability.
 
-- `silver_weather`
-- `silver_energy`
+## Canonical implementation
 
-Gold tables are analytics-ready:
+Spark Delta tables are canonical. The SQL analytics endpoint exposes pass-through views and does not reimplement joins or windows in T-SQL. This prevents logic drift between two SQL dialects.
 
-- `gold_weather_demand_join`
-- `gold_feature_engineering`
-- `gold_demand_aggregation`
+## Scale boundary
 
-Data quality run history is stored in:
-
-- `dq_run_results`
-
-## AWS to Fabric Mapping
-
-| Previous AWS concept | Microsoft Fabric target |
-| --- | --- |
-| S3 raw and curated buckets | OneLake Lakehouse Files and Tables |
-| Glue catalog tables | Lakehouse Delta tables and SQL analytics endpoint metadata |
-| Athena SQL views | Fabric Spark SQL tables and SQL endpoint T-SQL views |
-| Step Functions schedules | Fabric Data Factory pipeline |
-| CloudWatch checks and alarms | Fabric monitoring hub plus `dq_run_results` |
-| IAM roles and secrets | Fabric workspace roles, connections, and secure pipeline parameters |
-
-## Operational Notes
-
-- Keep raw API responses immutable so downstream records remain traceable to source payloads.
-- Fail ingestion when the CKAN source cannot be retrieved completely within the configured record bound.
-- Recompute silver and gold tables from raw files for this project scale. Move to incremental merge logic when history becomes large.
-- Use a Fabric deployment pipeline or Git integration for promotion between dev, test, and production workspaces.
-- Keep API keys in Fabric connections, Azure Key Vault, or secure pipeline parameters. Do not commit secrets.
+Silver and gold are currently rebuilt from immutable raw files. Replace overwrite writes with partition-aware Delta merge logic when history or Fabric capacity makes full rebuilds inappropriate.

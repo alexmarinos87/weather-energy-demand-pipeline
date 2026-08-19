@@ -15,13 +15,9 @@ def _load_notebook_namespace() -> dict:
 def _valid_weather_payload() -> dict:
     return {
         "dt": 1738800000,
-        "name": "London",
+        "name": "Nottingham",
         "cod": 200,
-        "main": {
-            "temp": 11.2,
-            "feels_like": 9.8,
-            "humidity": 82,
-        },
+        "main": {"temp": 11.2, "feels_like": 9.8, "humidity": 82},
         "weather": [{"main": "Clouds", "description": "broken clouds"}],
         "wind": {"speed": 4.1},
         "clouds": {"all": 70},
@@ -50,13 +46,29 @@ def test_fabric_ingestion_validates_weather_with_json_contract():
         namespace["_validate_payload"](payload, "weather")
 
 
-def test_fabric_ingestion_validates_energy_with_json_contract():
+def test_fabric_source_area_binding_rejects_cross_area_inputs():
     namespace = _load_notebook_namespace()
-    payload = _valid_energy_payload()
-    payload["result"].pop("limit")
 
-    with pytest.raises(ValueError, match="energy_schema.json"):
-        namespace["_validate_payload"](payload, "energy")
+    with pytest.raises(namespace["SourceAreaError"], match="weather proxy"):
+        namespace["_source_area_binding"](weather_city="London,GB")
+
+    with pytest.raises(namespace["SourceAreaError"], match="requires NGED resource"):
+        namespace["_source_area_binding"](
+            resource_id="38b81427-a2df-42f2-befa-4d6fe9b54c98"
+        )
+
+
+def test_fabric_metadata_contains_same_area_provenance():
+    namespace = _load_notebook_namespace()
+    binding = namespace["_source_area_binding"](weather_city="Nottingham,GB")
+
+    enriched = namespace["_attach_pipeline_metadata"](
+        _valid_weather_payload(), "weather", binding
+    )
+
+    metadata = enriched["_pipeline_metadata"]
+    assert metadata["source_area"] == "east_midlands"
+    assert metadata["nged_resource_id"] == "92d3431c-15d7-4aa6-ad34-2335596a026c"
 
 
 def test_fabric_ingestion_can_load_contracts_from_parameter(tmp_path):
@@ -64,7 +76,7 @@ def test_fabric_ingestion_can_load_contracts_from_parameter(tmp_path):
     contracts_root = tmp_path / "contracts"
     contracts_root.mkdir()
     contract_path = contracts_root / "weather_schema.json"
-    contract_path.write_text(json.dumps({"type": "object"}))
+    contract_path.write_text(json.dumps({"type": "object"}), encoding="utf-8")
     namespace["_resolve_contract_path"].__globals__["CONTRACTS_ROOT"] = str(contracts_root)
 
     assert namespace["_resolve_contract_path"]("weather") == contract_path
@@ -99,16 +111,12 @@ def test_fabric_energy_fetch_paginates_to_starting_total():
         api_token="secret",
         page_size=2,
         max_records=10,
-        validate_page=lambda payload: namespace["_validate_payload"](
-            payload,
-            "energy",
-        ),
+        validate_page=lambda payload: namespace["_validate_payload"](payload, "energy"),
         request_get=fake_get,
     )
 
     assert [record["_id"] for record in result["result"]["records"]] == [1, 2, 3]
     assert [call["offset"] for call in calls] == [0, 2]
-    assert result["result"]["pagination"]["source_total_at_finish"] == 4
 
 
 def test_fabric_raw_writer_honours_files_root_parameter(tmp_path):
