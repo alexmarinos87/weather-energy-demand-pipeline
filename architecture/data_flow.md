@@ -21,7 +21,8 @@ gold_weather_demand_join
        v
 gold_feature_engineering ----------------> gold_demand_aggregation
        |
-       | chronological train / validation / test
+       | feature time --HORIZON_STEPS--> future target time
+       | chronological split + overlapping-label purge
        | persistence and ridge baselines
        v
 forecast_baseline_predictions + forecast_baseline_metrics
@@ -38,35 +39,32 @@ Silver retains this provenance. Historical raw files without metadata remain rea
 
 ## Causal matching and feature rule
 
-A demand record may match only a weather record that:
+A demand record may match only a weather record that has the same non-null `source_area`, occurred at or before demand time, and is no more than six hours old. The latest eligible observation wins, with ingestion timestamp as a deterministic tie-breaker.
 
-1. has the same non-null `source_area`;
-2. occurred at or before the demand timestamp; and
-3. is no more than six hours old.
+Gold demand features are causal: `demand_lag_1` uses the preceding observation and `demand_rolling_mean_12` uses rows 12 through 1 before the current observation.
 
-The latest eligible observation wins, with ingestion timestamp as a deterministic tie-breaker. `weather_age_minutes` remains in gold for observability.
-
-Target-derived features use prior demand only. `demand_lag_1` uses the immediately preceding record and `demand_rolling_mean_12` uses rows 12 through 1 before the target. The current `demand_mw` value is never included in its own input features.
-
-## Chronological evaluation contract
+## Future-horizon evaluation contract
 
 Within each `source_area`, `resource_id`, and `city` group:
 
-1. rows are sorted by `event_timestamp_utc`;
-2. the first 60% form training history;
-3. the next 20% form validation history;
-4. the final 20% form test history;
-5. validation models fit only training rows;
-6. test models fit only training plus validation rows; and
-7. every prediction must satisfy `trained_through_utc < event_timestamp_utc`.
+1. rows are ordered by source `event_timestamp_utc`;
+2. feature time is the current row timestamp;
+3. target time and target demand come from `HORIZON_STEPS` later in that same group;
+4. target time must be strictly after feature time;
+5. the supervised rows are split chronologically into training, validation, and test;
+6. before validation fitting, training labels with target time at or after the first validation feature time are purged;
+7. before test fitting, candidate labels with target time at or after the first test feature time are purged; and
+8. every prediction must satisfy `trained_through_utc < feature_timestamp_utc < event_timestamp_utc`.
 
-The benchmark compares one-step persistence with ridge regression over causal features. Each run appends versioned prediction and metric evidence rather than overwriting prior evaluations.
+The persistence forecast uses current demand for the future target. Ridge regression may use current demand because it is known at feature time, together with prior demand, rolling demand, weather, and calendar inputs.
+
+Prediction evidence stores the feature timestamp, future target timestamp, ordered horizon, observed horizon minutes, current demand, actual future demand, prediction, errors, and training boundary. Metrics retain both feature-window and target-window timestamps.
 
 ## Canonical implementation
 
-Spark Delta tables are canonical. The SQL analytics endpoint exposes pass-through views and does not reimplement joins, feature windows, or model logic in T-SQL. This prevents logic drift between execution paths.
+Spark Delta tables are canonical. The SQL analytics endpoint exposes pass-through views and does not reimplement joins, feature windows, or model logic in T-SQL.
 
-The local pandas implementation exercises the same evaluation contract in CI and provides a credential-free demonstration. The Fabric notebook uses Spark ML for Lakehouse-scale execution.
+The local pandas implementation exercises the same future-horizon and label-purge contract in CI. The Fabric notebook uses Spark ML for Lakehouse-scale execution.
 
 ## Scale boundary
 
