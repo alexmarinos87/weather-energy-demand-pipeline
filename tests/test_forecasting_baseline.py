@@ -104,6 +104,7 @@ def test_prediction_rows_satisfy_versioned_evaluation_contract():
     row = predictions.iloc[0].to_dict()
     for timestamp_column in (
         "run_timestamp_utc",
+        "feature_timestamp_utc",
         "event_timestamp_utc",
         "trained_through_utc",
     ):
