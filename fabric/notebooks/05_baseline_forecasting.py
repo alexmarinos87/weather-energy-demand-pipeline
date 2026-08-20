@@ -1,8 +1,8 @@
 # Fabric notebook source: 05_baseline_forecasting
 #
-# Runs chronological persistence and ridge baselines over gold features.
-# This is a historical one-step benchmark using causal observed weather. It is
-# not a production future-weather forecast.
+# Runs purged future-horizon persistence and ridge baselines over gold features.
+# This is historical backtesting with observed weather, not a production
+# forecast-weather pipeline.
 
 from datetime import datetime, timezone
 from typing import Any
@@ -22,7 +22,13 @@ SOURCE_TABLE = "gold_feature_engineering"
 PREDICTIONS_TABLE = "forecast_baseline_predictions"
 METRICS_TABLE = "forecast_baseline_metrics"
 GROUP_COLUMNS = ["source_area", "resource_id", "city"]
+SOURCE_TIMESTAMP_COLUMN = "event_timestamp_utc"
+FEATURE_TIMESTAMP_COLUMN = "feature_timestamp_utc"
+TARGET_TIMESTAMP_COLUMN = "target_timestamp_utc"
+TARGET_COLUMN = "demand_mw"
+SUPERVISED_TARGET_COLUMN = "target_demand_mw"
 FEATURE_COLUMNS = [
+    "demand_mw",
     "demand_lag_1",
     "demand_rolling_mean_12",
     "temperature",
@@ -32,9 +38,7 @@ FEATURE_COLUMNS = [
     "is_weekend_utc",
     "weather_age_minutes",
 ]
-TARGET_COLUMN = "demand_mw"
-TIMESTAMP_COLUMN = "event_timestamp_utc"
-FEATURE_CONTRACT_VERSION = "baseline-v1"
+FEATURE_CONTRACT_VERSION = "horizon-v1"
 
 TRAIN_FRACTION = 0.60
 VALIDATION_FRACTION = 0.20
@@ -42,6 +46,7 @@ MIN_TRAIN_ROWS = 24
 MIN_VALIDATION_ROWS = 6
 MIN_TEST_ROWS = 6
 RIDGE_REG_PARAM = 1.0
+HORIZON_STEPS = 1
 
 
 def _get_parameter(name: str, default: Any) -> Any:
@@ -93,16 +98,23 @@ def _configuration() -> dict[str, Any]:
             _get_parameter("MIN_TEST_ROWS", MIN_TEST_ROWS), "MIN_TEST_ROWS"
         ),
         "ridge_reg_param": ridge_reg_param,
+        "horizon_steps": _positive_int(
+            _get_parameter("HORIZON_STEPS", HORIZON_STEPS), "HORIZON_STEPS"
+        ),
     }
 
 
 def _prepare_features(config: dict[str, Any]) -> DataFrame:
-    required_columns = [
-        *GROUP_COLUMNS,
-        TIMESTAMP_COLUMN,
-        TARGET_COLUMN,
-        *FEATURE_COLUMNS,
-    ]
+    required_columns = list(
+        dict.fromkeys(
+            [
+                *GROUP_COLUMNS,
+                SOURCE_TIMESTAMP_COLUMN,
+                TARGET_COLUMN,
+                *FEATURE_COLUMNS,
+            ]
+        )
+    )
     source = spark.table(SOURCE_TABLE)
     missing = sorted(set(required_columns) - set(source.columns))
     if missing:
@@ -112,7 +124,7 @@ def _prepare_features(config: dict[str, Any]) -> DataFrame:
 
     prepared = source.select(*required_columns).dropna(subset=required_columns)
     duplicate_count = (
-        prepared.groupBy(*GROUP_COLUMNS, TIMESTAMP_COLUMN)
+        prepared.groupBy(*GROUP_COLUMNS, SOURCE_TIMESTAMP_COLUMN)
         .count()
         .where(F.col("count") > 1)
         .limit(1)
@@ -121,8 +133,9 @@ def _prepare_features(config: dict[str, Any]) -> DataFrame:
     if duplicate_count:
         raise ValueError("Forecast groups contain duplicate event timestamps.")
 
-    order_window = Window.partitionBy(*GROUP_COLUMNS).orderBy(TIMESTAMP_COLUMN)
+    order_window = Window.partitionBy(*GROUP_COLUMNS).orderBy(SOURCE_TIMESTAMP_COLUMN)
     group_window = Window.partitionBy(*GROUP_COLUMNS)
+    horizon_steps = int(config["horizon_steps"])
     train_fraction = F.lit(config["train_fraction"])
     validation_end_fraction = F.lit(
         config["train_fraction"] + config["validation_fraction"]
@@ -130,6 +143,24 @@ def _prepare_features(config: dict[str, Any]) -> DataFrame:
 
     prepared = (
         prepared
+        .withColumn(FEATURE_TIMESTAMP_COLUMN, F.col(SOURCE_TIMESTAMP_COLUMN))
+        .withColumn(
+            TARGET_TIMESTAMP_COLUMN,
+            F.lead(F.col(SOURCE_TIMESTAMP_COLUMN), horizon_steps).over(order_window),
+        )
+        .withColumn(
+            SUPERVISED_TARGET_COLUMN,
+            F.lead(F.col(TARGET_COLUMN), horizon_steps).over(order_window),
+        )
+        .dropna(subset=[TARGET_TIMESTAMP_COLUMN, SUPERVISED_TARGET_COLUMN])
+        .withColumn(
+            "horizon_minutes",
+            (
+                F.unix_timestamp(F.col(TARGET_TIMESTAMP_COLUMN))
+                - F.unix_timestamp(F.col(FEATURE_TIMESTAMP_COLUMN))
+            )
+            / F.lit(60.0),
+        )
         .withColumn("_row_number", F.row_number().over(order_window))
         .withColumn("_group_count", F.count(F.lit(1)).over(group_window))
         .withColumn(
@@ -150,6 +181,13 @@ def _prepare_features(config: dict[str, Any]) -> DataFrame:
             .otherwise(F.lit("test")),
         )
     )
+
+    invalid_horizon = prepared.where(
+        (F.col(TARGET_TIMESTAMP_COLUMN) <= F.col(FEATURE_TIMESTAMP_COLUMN))
+        | (F.col("horizon_minutes") <= 0)
+    ).limit(1).count()
+    if invalid_horizon:
+        raise ValueError("Forecast targets must occur after their feature timestamps.")
 
     split_counts = (
         prepared.groupBy(*GROUP_COLUMNS)
@@ -208,7 +246,7 @@ def _fit_ridge(training: DataFrame, reg_param: float):
     )
     regression = LinearRegression(
         featuresCol="_features",
-        labelCol=TARGET_COLUMN,
+        labelCol=SUPERVISED_TARGET_COLUMN,
         predictionCol="predicted_demand_mw",
         regParam=reg_param,
         elasticNetParam=0.0,
@@ -220,6 +258,29 @@ def _fit_ridge(training: DataFrame, reg_param: float):
     return Pipeline(stages=[assembler, scaler, regression]).fit(training)
 
 
+def _purge_training(
+    training: DataFrame,
+    evaluation: DataFrame,
+    *,
+    min_train_rows: int,
+) -> tuple[DataFrame, datetime]:
+    evaluation_start = evaluation.agg(F.min(FEATURE_TIMESTAMP_COLUMN)).first()[0]
+    if evaluation_start is None:
+        raise ValueError("Evaluation split has no rows.")
+    purged = training.where(
+        F.col(TARGET_TIMESTAMP_COLUMN) < F.lit(evaluation_start)
+    ).persist(StorageLevel.MEMORY_AND_DISK)
+    row_count = purged.count()
+    if row_count < min_train_rows:
+        purged.unpersist()
+        raise ValueError(
+            "Purging overlapping horizon labels left "
+            f"{row_count} training rows; minimum is {min_train_rows}."
+        )
+    trained_through = purged.agg(F.max(TARGET_TIMESTAMP_COLUMN)).first()[0]
+    return purged, trained_through
+
+
 def _decorate_predictions(
     frame: DataFrame,
     *,
@@ -228,22 +289,27 @@ def _decorate_predictions(
     trained_through_utc: datetime,
     run_id: str,
     run_timestamp_utc: datetime,
+    horizon_steps: int,
 ) -> DataFrame:
     return frame.select(
         F.lit(run_id).alias("run_id"),
         F.lit(run_timestamp_utc).cast("timestamp").alias("run_timestamp_utc"),
         *GROUP_COLUMNS,
-        F.col(TIMESTAMP_COLUMN),
+        F.col(FEATURE_TIMESTAMP_COLUMN),
+        F.col(TARGET_TIMESTAMP_COLUMN).alias(SOURCE_TIMESTAMP_COLUMN),
+        F.lit(horizon_steps).cast("int").alias("horizon_steps"),
+        F.col("horizon_minutes").cast("double"),
         F.lit(split).alias("split"),
         F.lit(model_name).alias("model_name"),
-        F.col(TARGET_COLUMN).cast("double").alias("actual_demand_mw"),
+        F.col(TARGET_COLUMN).cast("double").alias("current_demand_mw"),
+        F.col(SUPERVISED_TARGET_COLUMN).cast("double").alias("actual_demand_mw"),
         F.col("predicted_demand_mw").cast("double"),
-        F.abs(F.col("predicted_demand_mw") - F.col(TARGET_COLUMN)).alias(
+        F.abs(F.col("predicted_demand_mw") - F.col(SUPERVISED_TARGET_COLUMN)).alias(
             "absolute_error_mw"
         ),
-        F.pow(F.col("predicted_demand_mw") - F.col(TARGET_COLUMN), 2).alias(
-            "squared_error_mw2"
-        ),
+        F.pow(
+            F.col("predicted_demand_mw") - F.col(SUPERVISED_TARGET_COLUMN), 2
+        ).alias("squared_error_mw2"),
         F.lit(trained_through_utc).cast("timestamp").alias("trained_through_utc"),
         F.lit(FEATURE_CONTRACT_VERSION).alias("feature_contract_version"),
     )
@@ -260,22 +326,32 @@ def _evaluate_group(
     validation = group_frame.where(F.col("split") == "validation")
     test = group_frame.where(F.col("split") == "test")
 
-    validation_training_end = train.agg(F.max(TIMESTAMP_COLUMN)).first()[0]
-    validation_model = _fit_ridge(train, config["ridge_reg_param"])
+    validation_training, validation_training_end = _purge_training(
+        train,
+        validation,
+        min_train_rows=config["min_train_rows"],
+    )
+    validation_model = _fit_ridge(
+        validation_training, config["ridge_reg_param"]
+    )
     validation_ridge = validation_model.transform(validation)
     validation_persistence = validation.withColumn(
-        "predicted_demand_mw", F.col("demand_lag_1").cast("double")
+        "predicted_demand_mw", F.col(TARGET_COLUMN).cast("double")
     )
 
-    test_training = train.unionByName(validation)
-    test_training_end = test_training.agg(F.max(TIMESTAMP_COLUMN)).first()[0]
+    test_training_candidates = train.unionByName(validation)
+    test_training, test_training_end = _purge_training(
+        test_training_candidates,
+        test,
+        min_train_rows=config["min_train_rows"],
+    )
     test_model = _fit_ridge(test_training, config["ridge_reg_param"])
     test_ridge = test_model.transform(test)
     test_persistence = test.withColumn(
-        "predicted_demand_mw", F.col("demand_lag_1").cast("double")
+        "predicted_demand_mw", F.col(TARGET_COLUMN).cast("double")
     )
 
-    return [
+    frames = [
         _decorate_predictions(
             validation_persistence,
             split="validation",
@@ -283,6 +359,7 @@ def _evaluate_group(
             trained_through_utc=validation_training_end,
             run_id=run_id,
             run_timestamp_utc=run_timestamp_utc,
+            horizon_steps=config["horizon_steps"],
         ),
         _decorate_predictions(
             validation_ridge,
@@ -291,6 +368,7 @@ def _evaluate_group(
             trained_through_utc=validation_training_end,
             run_id=run_id,
             run_timestamp_utc=run_timestamp_utc,
+            horizon_steps=config["horizon_steps"],
         ),
         _decorate_predictions(
             test_persistence,
@@ -299,6 +377,7 @@ def _evaluate_group(
             trained_through_utc=test_training_end,
             run_id=run_id,
             run_timestamp_utc=run_timestamp_utc,
+            horizon_steps=config["horizon_steps"],
         ),
         _decorate_predictions(
             test_ridge,
@@ -307,8 +386,12 @@ def _evaluate_group(
             trained_through_utc=test_training_end,
             run_id=run_id,
             run_timestamp_utc=run_timestamp_utc,
+            horizon_steps=config["horizon_steps"],
         ),
     ]
+    validation_training.unpersist()
+    test_training.unpersist()
+    return frames
 
 
 def _union_frames(frames: list[DataFrame]) -> DataFrame:
@@ -327,6 +410,7 @@ def _build_metrics(predictions: DataFrame) -> DataFrame:
             "run_id",
             "run_timestamp_utc",
             *GROUP_COLUMNS,
+            "horizon_steps",
             "split",
             "model_name",
             "trained_through_utc",
@@ -343,8 +427,10 @@ def _build_metrics(predictions: DataFrame) -> DataFrame:
                 )
             ).alias("mape_pct"),
             F.avg(error).alias("bias_mw"),
-            F.min(TIMESTAMP_COLUMN).alias("evaluation_start_utc"),
-            F.max(TIMESTAMP_COLUMN).alias("evaluation_end_utc"),
+            F.min(FEATURE_TIMESTAMP_COLUMN).alias("evaluation_feature_start_utc"),
+            F.max(FEATURE_TIMESTAMP_COLUMN).alias("evaluation_feature_end_utc"),
+            F.min(SOURCE_TIMESTAMP_COLUMN).alias("evaluation_start_utc"),
+            F.max(SOURCE_TIMESTAMP_COLUMN).alias("evaluation_end_utc"),
         )
     )
 
@@ -369,10 +455,18 @@ def run_backtest() -> tuple[DataFrame, DataFrame]:
 
     predictions = _union_frames(prediction_frames).persist(StorageLevel.MEMORY_AND_DISK)
     leakage_count = predictions.where(
-        F.col(TIMESTAMP_COLUMN) <= F.col("trained_through_utc")
+        F.col(FEATURE_TIMESTAMP_COLUMN) <= F.col("trained_through_utc")
     ).limit(1).count()
     if leakage_count:
-        raise ValueError("A prediction was evaluated at or before its training boundary.")
+        raise ValueError("A prediction used labels that were not known at feature time.")
+
+    invalid_horizon_count = predictions.where(
+        (F.col(SOURCE_TIMESTAMP_COLUMN) <= F.col(FEATURE_TIMESTAMP_COLUMN))
+        | (F.col("horizon_steps") < 1)
+        | (F.col("horizon_minutes") <= 0)
+    ).limit(1).count()
+    if invalid_horizon_count:
+        raise ValueError("Forecast prediction horizons are invalid.")
 
     invalid_prediction_count = predictions.where(
         F.col("predicted_demand_mw").isNull()
@@ -401,10 +495,12 @@ def run_backtest() -> tuple[DataFrame, DataFrame]:
         .saveAsTable(METRICS_TABLE)
     )
 
-    predictions.orderBy(*GROUP_COLUMNS, "split", "model_name", TIMESTAMP_COLUMN).show(
-        20, truncate=False
+    predictions.orderBy(
+        *GROUP_COLUMNS, "horizon_steps", "split", "model_name", SOURCE_TIMESTAMP_COLUMN
+    ).show(20, truncate=False)
+    metrics.orderBy(*GROUP_COLUMNS, "horizon_steps", "split", "model_name").show(
+        truncate=False
     )
-    metrics.orderBy(*GROUP_COLUMNS, "split", "model_name").show(truncate=False)
     prepared.unpersist()
     predictions.unpersist()
     return predictions, metrics
