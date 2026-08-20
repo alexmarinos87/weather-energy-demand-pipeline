@@ -8,12 +8,17 @@ from uuid import uuid4
 import pandas as pd
 
 from forecasting.contracts import (
+    FEATURE_TIMESTAMP_COLUMN,
     GROUP_COLUMNS,
+    SUPERVISED_TARGET_COLUMN,
     TARGET_COLUMN,
+    TARGET_TIMESTAMP_COLUMN,
     TIMESTAMP_COLUMN,
     BacktestConfig,
     ForecastingContractError,
+    build_supervised_frame,
     prepare_feature_frame,
+    purge_overlapping_training_rows,
     split_group,
 )
 from forecasting.ridge import fit_ridge_model
@@ -23,9 +28,13 @@ PREDICTION_COLUMNS = [
     "run_id",
     "run_timestamp_utc",
     *GROUP_COLUMNS,
+    FEATURE_TIMESTAMP_COLUMN,
     TIMESTAMP_COLUMN,
+    "horizon_steps",
+    "horizon_minutes",
     "split",
     "model_name",
+    "current_demand_mw",
     "actual_demand_mw",
     "predicted_demand_mw",
     "absolute_error_mw",
@@ -37,6 +46,7 @@ METRIC_COLUMNS = [
     "run_id",
     "run_timestamp_utc",
     *GROUP_COLUMNS,
+    "horizon_steps",
     "split",
     "model_name",
     "observation_count",
@@ -45,6 +55,8 @@ METRIC_COLUMNS = [
     "mape_pct",
     "bias_mw",
     "trained_through_utc",
+    "evaluation_feature_start_utc",
+    "evaluation_feature_end_utc",
     "evaluation_start_utc",
     "evaluation_end_utc",
     "feature_contract_version",
@@ -60,7 +72,7 @@ def _prediction_rows(
     trained_through: pd.Timestamp,
     run_id: str,
     run_timestamp: datetime,
-    feature_contract_version: str,
+    config: BacktestConfig,
 ) -> list[dict[str, object]]:
     predicted_values = list(predicted)
     if len(predicted_values) != len(evaluation):
@@ -71,7 +83,7 @@ def _prediction_rows(
     for source_row, prediction in zip(
         evaluation.itertuples(index=False), predicted_values
     ):
-        actual = float(getattr(source_row, TARGET_COLUMN))
+        actual = float(getattr(source_row, SUPERVISED_TARGET_COLUMN))
         error = float(prediction) - actual
         rows.append(
             {
@@ -80,15 +92,19 @@ def _prediction_rows(
                 "source_area": source_row.source_area,
                 "resource_id": source_row.resource_id,
                 "city": source_row.city,
-                TIMESTAMP_COLUMN: getattr(source_row, TIMESTAMP_COLUMN),
+                FEATURE_TIMESTAMP_COLUMN: getattr(source_row, FEATURE_TIMESTAMP_COLUMN),
+                TIMESTAMP_COLUMN: getattr(source_row, TARGET_TIMESTAMP_COLUMN),
+                "horizon_steps": config.horizon_steps,
+                "horizon_minutes": float(source_row.horizon_minutes),
                 "split": split,
                 "model_name": model_name,
+                "current_demand_mw": float(getattr(source_row, TARGET_COLUMN)),
                 "actual_demand_mw": actual,
                 "predicted_demand_mw": float(prediction),
                 "absolute_error_mw": abs(error),
                 "squared_error_mw2": error * error,
                 "trained_through_utc": trained_through,
-                "feature_contract_version": feature_contract_version,
+                "feature_contract_version": config.feature_contract_version,
             }
         )
     return rows
@@ -113,6 +129,7 @@ def _metric_row(group: pd.DataFrame) -> dict[str, object]:
         "source_area": first["source_area"],
         "resource_id": first["resource_id"],
         "city": first["city"],
+        "horizon_steps": int(first["horizon_steps"]),
         "split": first["split"],
         "model_name": first["model_name"],
         "observation_count": int(len(group)),
@@ -121,6 +138,8 @@ def _metric_row(group: pd.DataFrame) -> dict[str, object]:
         "mape_pct": mape,
         "bias_mw": float(errors.mean()),
         "trained_through_utc": first["trained_through_utc"],
+        "evaluation_feature_start_utc": group[FEATURE_TIMESTAMP_COLUMN].min(),
+        "evaluation_feature_end_utc": group[FEATURE_TIMESTAMP_COLUMN].max(),
         "evaluation_start_utc": group[TIMESTAMP_COLUMN].min(),
         "evaluation_end_utc": group[TIMESTAMP_COLUMN].max(),
         "feature_contract_version": first["feature_contract_version"],
@@ -136,10 +155,12 @@ def _evaluate_split(
     run_id: str,
     run_timestamp: datetime,
 ) -> list[dict[str, object]]:
-    trained_through = training[TIMESTAMP_COLUMN].max()
+    training = purge_overlapping_training_rows(training, evaluation, config)
+    trained_through = training[TARGET_TIMESTAMP_COLUMN].max()
     ridge = fit_ridge_model(
         training,
         feature_columns=config.feature_columns,
+        target_column=SUPERVISED_TARGET_COLUMN,
         alpha=config.ridge_alpha,
     ).predict(
         evaluation.loc[:, config.feature_columns].itertuples(index=False, name=None)
@@ -148,11 +169,11 @@ def _evaluate_split(
         evaluation,
         split=split,
         model_name="persistence_lag_1",
-        predicted=evaluation["demand_lag_1"].astype(float).tolist(),
+        predicted=evaluation[TARGET_COLUMN].astype(float).tolist(),
         trained_through=trained_through,
         run_id=run_id,
         run_timestamp=run_timestamp,
-        feature_contract_version=config.feature_contract_version,
+        config=config,
     )
     rows.extend(
         _prediction_rows(
@@ -163,7 +184,7 @@ def _evaluate_split(
             trained_through=trained_through,
             run_id=run_id,
             run_timestamp=run_timestamp,
-            feature_contract_version=config.feature_contract_version,
+            config=config,
         )
     )
     return rows
@@ -176,9 +197,10 @@ def run_chronological_backtest(
     run_id: str | None = None,
     run_timestamp: datetime | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Evaluate persistence and ridge baselines without fitting on future rows."""
+    """Evaluate explicit future-horizon baselines without fitting on future labels."""
     config = config or BacktestConfig()
     prepared = prepare_feature_frame(frame, config)
+    supervised = build_supervised_frame(prepared, config)
     run_id = run_id or str(uuid4())
     run_timestamp = run_timestamp or datetime.now(timezone.utc)
     if run_timestamp.tzinfo is None:
@@ -186,8 +208,8 @@ def run_chronological_backtest(
     run_timestamp = run_timestamp.astimezone(timezone.utc)
 
     all_predictions: list[dict[str, object]] = []
-    for _, group in prepared.groupby(GROUP_COLUMNS, sort=True, dropna=False):
-        group = group.sort_values(TIMESTAMP_COLUMN).reset_index(drop=True)
+    for _, group in supervised.groupby(GROUP_COLUMNS, sort=True, dropna=False):
+        group = group.sort_values(FEATURE_TIMESTAMP_COLUMN).reset_index(drop=True)
         train, validation, test = split_group(group, config)
         all_predictions.extend(
             _evaluate_split(
@@ -214,16 +236,22 @@ def run_chronological_backtest(
     if predictions.empty:
         raise ForecastingContractError("No groups produced forecast predictions.")
     if not (
-        predictions["trained_through_utc"] < predictions[TIMESTAMP_COLUMN]
+        predictions["trained_through_utc"] < predictions[FEATURE_TIMESTAMP_COLUMN]
     ).all():
         raise ForecastingContractError(
-            "A prediction was evaluated at or before its training boundary."
+            "A prediction used labels that were not known at feature time."
+        )
+    if not (
+        predictions[FEATURE_TIMESTAMP_COLUMN] < predictions[TIMESTAMP_COLUMN]
+    ).all():
+        raise ForecastingContractError(
+            "A forecast target did not occur after its feature timestamp."
         )
     metrics = pd.DataFrame(
         [
             _metric_row(group)
             for _, group in predictions.groupby(
-                [*GROUP_COLUMNS, "split", "model_name"], sort=True
+                [*GROUP_COLUMNS, "horizon_steps", "split", "model_name"], sort=True
             )
         ],
         columns=METRIC_COLUMNS,
