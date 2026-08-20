@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "weather_energy_baseline_evaluation_v1",
-  "description": "Contract for one leakage-safe baseline prediction row.",
+  "title": "forecast_evaluation_prediction_v2",
+  "description": "Prediction evidence for a purged future-horizon demand backtest.",
   "type": "object",
   "required": [
     "run_id",
@@ -9,11 +9,17 @@
     "source_area",
     "resource_id",
     "city",
+    "feature_timestamp_utc",
     "event_timestamp_utc",
+    "horizon_steps",
+    "horizon_minutes",
     "split",
     "model_name",
+    "current_demand_mw",
     "actual_demand_mw",
     "predicted_demand_mw",
+    "absolute_error_mw",
+    "squared_error_mw2",
     "trained_through_utc",
     "feature_contract_version"
   ],
@@ -23,15 +29,19 @@
     "source_area": {"type": "string", "minLength": 1},
     "resource_id": {"type": "string", "minLength": 1},
     "city": {"type": "string", "minLength": 1},
+    "feature_timestamp_utc": {"type": "string", "format": "date-time"},
     "event_timestamp_utc": {"type": "string", "format": "date-time"},
-    "split": {"enum": ["validation", "test"]},
-    "model_name": {"enum": ["persistence_lag_1", "ridge_weather_lag"]},
+    "horizon_steps": {"type": "integer", "minimum": 1},
+    "horizon_minutes": {"type": "number", "exclusiveMinimum": 0},
+    "split": {"type": "string", "enum": ["validation", "test"]},
+    "model_name": {"type": "string", "minLength": 1},
+    "current_demand_mw": {"type": "number"},
     "actual_demand_mw": {"type": "number"},
     "predicted_demand_mw": {"type": "number"},
     "absolute_error_mw": {"type": "number", "minimum": 0},
     "squared_error_mw2": {"type": "number", "minimum": 0},
     "trained_through_utc": {"type": "string", "format": "date-time"},
-    "feature_contract_version": {"const": "baseline-v1"}
+    "feature_contract_version": {"type": "string", "const": "horizon-v1"}
   },
   "additionalProperties": true
 }
