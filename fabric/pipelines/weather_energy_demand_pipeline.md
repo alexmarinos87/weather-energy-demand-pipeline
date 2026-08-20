@@ -17,10 +17,11 @@ Pipeline name: `weather_energy_demand_pipeline`
 | `CONTRACTS_ROOT` | No | Override only when contracts are not in `Files/data-contracts`. |
 | `TRAIN_FRACTION` | No | Default `0.60`. |
 | `VALIDATION_FRACTION` | No | Default `0.20`. |
-| `MIN_TRAIN_ROWS` | No | Default `24`. |
+| `MIN_TRAIN_ROWS` | No | Default `24` after horizon-overlap purging. |
 | `MIN_VALIDATION_ROWS` | No | Default `6`. |
 | `MIN_TEST_ROWS` | No | Default `6`. |
 | `RIDGE_REG_PARAM` | No | Default `1.0`. |
+| `HORIZON_STEPS` | No | Default `1`; ordered source observations from feature time to target time. |
 | `MAX_EXPECTED_DATA_LAG_HOURS` | No | Default `3`. |
 
 ## Activities
@@ -35,18 +36,19 @@ Pipeline name: `weather_energy_demand_pipeline`
 3. `03_build_gold_tables`
    - Depend on silver success.
    - Match only same-area, past weather no more than six hours old.
-   - Ensure target-derived rolling features exclude the current row.
+   - Ensure demand rolling features exclude the current row.
 4. `04_data_quality_checks`
    - Depend on gold success.
    - Persist source and gold quality results and fail on blocking defects.
 5. `05_baseline_forecasting`
    - Depend on source/gold quality success.
-   - Pass optional split, minimum-history, and ridge parameters.
-   - Append chronological prediction and metric evidence.
-   - Fail on insufficient history, duplicate timestamps, invalid predictions, or training-boundary leakage.
+   - Shift each causal feature row to an explicit future demand target using `HORIZON_STEPS`.
+   - Purge training labels whose target time is not earlier than the first evaluation feature time.
+   - Append future-horizon prediction and metric evidence.
+   - Fail on insufficient purged history, invalid horizons, invalid predictions, duplicate timestamps, or label-availability leakage.
 6. `06_forecast_quality_checks`
    - Depend on forecasting success.
-   - Validate the newest prediction and metric run.
+   - Validate feature/target ordering, positive horizons, label-availability boundaries, and metric windows for the newest run.
    - Append results to `dq_run_results` and fail on blocking defects.
 
-Start hourly. Use two retries separated by at least five minutes. Do not enable a faster cadence until API quota, source latency, forecast run growth, and Fabric capacity have been observed.
+Start hourly. Use two retries separated by at least five minutes. Do not enable a faster cadence until API quota, source latency, forecast-run growth, and Fabric capacity have been observed.
