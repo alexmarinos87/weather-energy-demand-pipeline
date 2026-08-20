@@ -34,7 +34,7 @@ def _write_frame(frame: pd.DataFrame, path: Path, output_format: str) -> Path:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run leakage-safe persistence and ridge demand baselines."
+        description="Run purged future-horizon persistence and ridge demand baselines."
     )
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--input", type=Path, help="Gold feature CSV or Parquet.")
@@ -48,6 +48,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--output-format", choices=("csv", "parquet"), default="csv"
     )
     parser.add_argument("--ridge-alpha", type=float, default=1.0)
+    parser.add_argument(
+        "--horizon-steps",
+        type=int,
+        default=1,
+        help="Number of ordered observations between feature time and target time.",
+    )
     return parser
 
 
@@ -56,7 +62,10 @@ def main(argv: list[str] | None = None) -> int:
     frame = build_demo_feature_frame() if args.demo else _read_frame(args.input)
     predictions, metrics = run_chronological_backtest(
         frame,
-        config=BacktestConfig(ridge_alpha=args.ridge_alpha),
+        config=BacktestConfig(
+            ridge_alpha=args.ridge_alpha,
+            horizon_steps=args.horizon_steps,
+        ),
     )
     predictions_path = _write_frame(
         predictions, args.output_dir / "baseline_predictions", args.output_format
@@ -68,7 +77,15 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Wrote metrics: {metrics_path}")
     print(
         metrics[
-            ["source_area", "split", "model_name", "observation_count", "mae_mw", "rmse_mw"]
+            [
+                "source_area",
+                "horizon_steps",
+                "split",
+                "model_name",
+                "observation_count",
+                "mae_mw",
+                "rmse_mw",
+            ]
         ].to_string(index=False)
     )
     return 0
