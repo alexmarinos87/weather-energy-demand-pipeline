@@ -2,7 +2,7 @@
 
 ## Problem
 
-Weather and electricity-demand data arrive from different systems, at different frequencies, and with different spatial meanings. Combining them without explicit source identity can produce untraceable analysis, cross-region joins, features that use weather from the future, or model scores contaminated by training on evaluation rows.
+Weather and electricity-demand data arrive from different systems, at different frequencies, and with different spatial meanings. Combining them without explicit source identity can produce untraceable analysis, cross-region joins, weather leakage, or model scores contaminated by labels that would not yet have been known when a forecast was made.
 
 ## Solution
 
@@ -13,7 +13,9 @@ This project implements a Microsoft Fabric medallion pipeline that:
 - binds each NGED licence-area resource to an explicit project weather proxy;
 - propagates source-area and file-level provenance through silver tables;
 - joins only same-area weather at or before each demand timestamp;
-- builds leakage-safe lag, rolling, calendar, weather, and aggregation features;
+- builds causal lag, rolling, calendar, weather, and aggregation features;
+- creates explicit future demand targets using a configurable ordered-observation horizon;
+- purges training labels that would not be available at evaluation feature time;
 - evaluates persistence and regularised linear baselines with chronological train, validation, and test boundaries;
 - appends prediction and metric evidence to Delta tables; and
 - records blocking and warning data-quality results in `dq_run_results`.
@@ -48,9 +50,8 @@ silver_weather + silver_energy
 gold_weather_demand_join
         ↓ prior-demand lags/rolling windows + causal weather/calendar features
 gold_feature_engineering
-        ↓ hourly and daily summaries
-gold_demand_aggregation
-        ↓ chronological train / validation / test
+        ↓ feature time --HORIZON_STEPS--> future demand target
+        ↓ chronological split + overlapping-label purge
 persistence_lag_1 + ridge_weather_lag
         ↓
 forecast_baseline_predictions + forecast_baseline_metrics
@@ -58,7 +59,21 @@ forecast_baseline_predictions + forecast_baseline_metrics
 SQL endpoint / Power BI / model comparison
 ```
 
-For each demand observation, the gold join selects the latest weather observation from the same `source_area` whose timestamp is no later than demand time and no more than six hours old. Demand rolling features exclude the current target row.
+For each demand observation, the gold join selects the latest weather observation from the same `source_area` whose timestamp is no later than demand time and no more than six hours old. Demand rolling features exclude the current row.
+
+Forecast evidence distinguishes:
+
+- `feature_timestamp_utc` — when the input values were available;
+- `event_timestamp_utc` — the future target timestamp;
+- `horizon_steps` — ordered observations between feature and target;
+- `horizon_minutes` — observed elapsed time;
+- `trained_through_utc` — latest target label used for fitting.
+
+Every prediction must satisfy:
+
+```text
+trained_through_utc < feature_timestamp_utc < event_timestamp_utc
+```
 
 ## Credential-free forecasting demo
 
@@ -68,6 +83,7 @@ The local benchmark requires no API credentials and writes reproducible CSV or P
 python3 -m pip install -r requirements.txt
 python3 -m forecasting.run_baseline \
   --demo \
+  --horizon-steps 3 \
   --output-dir data/forecasting \
   --output-format csv
 ```
@@ -79,19 +95,20 @@ Outputs:
 
 The demo compares:
 
-- `persistence_lag_1` — previous demand as the prediction;
-- `ridge_weather_lag` — regularised linear demand model using only causal lag, rolling, weather, and calendar features.
-
-Each prediction stores `trained_through_utc`. The run fails if an evaluation timestamp is not strictly later than its training boundary.
+- `persistence_lag_1` — demand at feature time carried forward to the future target;
+- `ridge_weather_lag` — regularised linear demand model using only information available at feature time.
 
 For exported Fabric features, replace `--demo` with:
 
 ```bash
 python3 -m forecasting.run_baseline \
   --input gold_feature_engineering.parquet \
+  --horizon-steps 1 \
   --output-dir data/forecasting \
   --output-format parquet
 ```
+
+`horizon_steps` is observation-based. Inspect `horizon_minutes` when source intervals may be irregular.
 
 ## Local ingestion development
 
@@ -127,10 +144,10 @@ Energy ingestion requests CKAN pages in ascending `_id` order until the total re
 3. Import notebook sources `01` through `06` from `fabric/notebooks/`.
 4. Create `weather_energy_demand_pipeline` from `fabric/pipelines/weather_energy_demand_pipeline.md`.
 5. Supply secure credentials and a consistent `SOURCE_AREA`, `WEATHER_CITY`, and `NATIONAL_GRID_RESOURCE_ID`.
-6. Run ingestion, silver, gold, source/gold quality, baseline forecasting, and forecast quality in order.
+6. Choose `HORIZON_STEPS` and run ingestion, silver, gold, source/gold quality, future-horizon forecasting, and forecast quality in order.
 7. Optionally create pass-through SQL views from `fabric/sql/gold_views_tsql.sql` and `fabric/sql/forecast_views_tsql.sql`.
 8. Enable the schedule only after source quotas and Fabric capacity are confirmed.
 
 ## Forecasting boundary
 
-The implemented baseline is a historical one-step benchmark using causal observed weather and prior demand. It is suitable for validating feature usefulness and model plumbing. A production forward forecast would additionally require forecast-weather inputs, horizon-specific labels, drift monitoring, and a model promotion process.
+The implemented benchmark creates genuine future targets and prevents overlapping-label leakage, but it still uses observed weather at feature time. A production forward forecast would additionally require forecast-weather inputs, time-based service-level horizons, rolling-origin evaluation, drift monitoring, and a model promotion process.
