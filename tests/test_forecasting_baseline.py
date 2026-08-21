@@ -18,38 +18,43 @@ from forecasting.run_baseline import main
 
 
 def test_chronological_backtest_never_trains_on_evaluation_rows():
-    frame = build_demo_feature_frame(periods=120)
+    frame = build_demo_feature_frame(periods=180)
     predictions, metrics = run_chronological_backtest(
         frame,
         run_id="test-run",
-        run_timestamp=datetime(2026, 8, 19, tzinfo=timezone.utc),
+        run_timestamp=datetime(2026, 8, 21, tzinfo=timezone.utc),
     )
 
     assert set(predictions["split"]) == {"validation", "test"}
     assert set(predictions["model_name"]) == {
-        "persistence_lag_1",
+        "persistence_current_value",
         "ridge_weather_lag",
     }
     assert (
-        predictions["trained_through_utc"] < predictions["event_timestamp_utc"]
+        predictions["trained_through_utc"] < predictions["feature_timestamp_utc"]
+    ).all()
+    assert (
+        predictions["feature_timestamp_utc"] < predictions["event_timestamp_utc"]
     ).all()
     assert set(metrics["split"]) == {"validation", "test"}
     assert (metrics["observation_count"] > 0).all()
 
 
 def test_ridge_baseline_beats_persistence_on_weather_sensitive_demo():
-    frame = build_demo_feature_frame(periods=144)
+    frame = build_demo_feature_frame(periods=240)
     _, metrics = run_chronological_backtest(frame, run_id="comparison")
-    test_metrics = metrics.loc[metrics["split"] == "test"].set_index("model_name")
+    test_metrics = metrics.loc[metrics["split"] == "test"]
 
-    assert (
-        test_metrics.loc["ridge_weather_lag", "mae_mw"]
-        < test_metrics.loc["persistence_lag_1", "mae_mw"]
-    )
+    for _, horizon_metrics in test_metrics.groupby("requested_horizon_minutes"):
+        by_model = horizon_metrics.set_index("model_name")
+        assert (
+            by_model.loc["ridge_weather_lag", "mae_mw"]
+            < by_model.loc["persistence_current_value", "mae_mw"]
+        )
 
 
 def test_duplicate_group_timestamps_are_rejected():
-    frame = build_demo_feature_frame(periods=80)
+    frame = build_demo_feature_frame(periods=120)
     duplicate = pd.concat([frame, frame.iloc[[10]]], ignore_index=True)
 
     with pytest.raises(ForecastingContractError, match="duplicate event timestamps"):
@@ -57,7 +62,7 @@ def test_duplicate_group_timestamps_are_rejected():
 
 
 def test_non_finite_features_are_rejected():
-    frame = build_demo_feature_frame(periods=80)
+    frame = build_demo_feature_frame(periods=120)
     frame.loc[10, "temperature"] = float("inf")
 
     with pytest.raises(ForecastingContractError, match="finite values"):
@@ -65,7 +70,7 @@ def test_non_finite_features_are_rejected():
 
 
 def test_insufficient_history_is_rejected():
-    frame = build_demo_feature_frame(periods=60).iloc[:30]
+    frame = build_demo_feature_frame(periods=96).iloc[:40]
 
     with pytest.raises(ForecastingContractError, match="training rows"):
         run_chronological_backtest(frame)
@@ -88,11 +93,12 @@ def test_cli_demo_writes_predictions_and_metrics(tmp_path):
 
 
 def test_prediction_rows_satisfy_versioned_evaluation_contract():
-    frame = build_demo_feature_frame(periods=96)
+    frame = build_demo_feature_frame(periods=180)
     predictions, _ = run_chronological_backtest(
         frame,
+        config=BacktestConfig(horizon_minutes=(30,)),
         run_id="contract-test",
-        run_timestamp=datetime(2026, 8, 19, tzinfo=timezone.utc),
+        run_timestamp=datetime(2026, 8, 21, tzinfo=timezone.utc),
     )
     contract_path = (
         Path(__file__).resolve().parents[1]

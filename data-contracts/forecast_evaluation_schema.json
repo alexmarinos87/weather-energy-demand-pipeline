@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "forecast_evaluation_prediction_v2",
-  "description": "Prediction evidence for a purged future-horizon demand backtest.",
+  "title": "forecast_evaluation_prediction_v3",
+  "description": "Prediction evidence for purged 30/60-minute demand backtests with bounded target matching.",
   "type": "object",
   "required": [
     "run_id",
@@ -11,8 +11,11 @@
     "city",
     "feature_timestamp_utc",
     "event_timestamp_utc",
+    "requested_horizon_minutes",
+    "target_tolerance_minutes",
     "horizon_steps",
     "horizon_minutes",
+    "target_delay_minutes",
     "split",
     "model_name",
     "current_demand_mw",
@@ -31,8 +34,11 @@
     "city": {"type": "string", "minLength": 1},
     "feature_timestamp_utc": {"type": "string", "format": "date-time"},
     "event_timestamp_utc": {"type": "string", "format": "date-time"},
+    "requested_horizon_minutes": {"type": "integer", "enum": [30, 60]},
+    "target_tolerance_minutes": {"type": "integer", "minimum": 0},
     "horizon_steps": {"type": "integer", "minimum": 1},
     "horizon_minutes": {"type": "number", "exclusiveMinimum": 0},
+    "target_delay_minutes": {"type": "number", "minimum": 0},
     "split": {"type": "string", "enum": ["validation", "test"]},
     "model_name": {"type": "string", "minLength": 1},
     "current_demand_mw": {"type": "number"},
@@ -41,7 +47,7 @@
     "absolute_error_mw": {"type": "number", "minimum": 0},
     "squared_error_mw2": {"type": "number", "minimum": 0},
     "trained_through_utc": {"type": "string", "format": "date-time"},
-    "feature_contract_version": {"type": "string", "const": "horizon-v1"}
+    "feature_contract_version": {"type": "string", "const": "time-horizon-v1"}
   },
   "additionalProperties": true
 }

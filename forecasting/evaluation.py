@@ -10,9 +10,12 @@ import pandas as pd
 from forecasting.contracts import (
     FEATURE_TIMESTAMP_COLUMN,
     GROUP_COLUMNS,
+    REQUESTED_HORIZON_COLUMN,
     SUPERVISED_TARGET_COLUMN,
     TARGET_COLUMN,
+    TARGET_DELAY_COLUMN,
     TARGET_TIMESTAMP_COLUMN,
+    TARGET_TOLERANCE_COLUMN,
     TIMESTAMP_COLUMN,
     BacktestConfig,
     ForecastingContractError,
@@ -30,8 +33,11 @@ PREDICTION_COLUMNS = [
     *GROUP_COLUMNS,
     FEATURE_TIMESTAMP_COLUMN,
     TIMESTAMP_COLUMN,
+    REQUESTED_HORIZON_COLUMN,
+    TARGET_TOLERANCE_COLUMN,
     "horizon_steps",
     "horizon_minutes",
+    TARGET_DELAY_COLUMN,
     "split",
     "model_name",
     "current_demand_mw",
@@ -46,10 +52,18 @@ METRIC_COLUMNS = [
     "run_id",
     "run_timestamp_utc",
     *GROUP_COLUMNS,
-    "horizon_steps",
+    REQUESTED_HORIZON_COLUMN,
+    TARGET_TOLERANCE_COLUMN,
     "split",
     "model_name",
     "observation_count",
+    "eligible_target_count",
+    "matched_target_count",
+    "target_coverage_pct",
+    "horizon_steps_avg",
+    "horizon_minutes_avg",
+    "target_delay_minutes_avg",
+    "target_delay_minutes_max",
     "mae_mw",
     "rmse_mw",
     "mape_pct",
@@ -94,8 +108,13 @@ def _prediction_rows(
                 "city": source_row.city,
                 FEATURE_TIMESTAMP_COLUMN: getattr(source_row, FEATURE_TIMESTAMP_COLUMN),
                 TIMESTAMP_COLUMN: getattr(source_row, TARGET_TIMESTAMP_COLUMN),
-                "horizon_steps": config.horizon_steps,
+                REQUESTED_HORIZON_COLUMN: int(
+                    getattr(source_row, REQUESTED_HORIZON_COLUMN)
+                ),
+                TARGET_TOLERANCE_COLUMN: config.target_tolerance_minutes,
+                "horizon_steps": int(source_row.horizon_steps),
                 "horizon_minutes": float(source_row.horizon_minutes),
+                TARGET_DELAY_COLUMN: float(getattr(source_row, TARGET_DELAY_COLUMN)),
                 "split": split,
                 "model_name": model_name,
                 "current_demand_mw": float(getattr(source_row, TARGET_COLUMN)),
@@ -110,7 +129,7 @@ def _prediction_rows(
     return rows
 
 
-def _metric_row(group: pd.DataFrame) -> dict[str, object]:
+def _metric_row(group: pd.DataFrame, supervised_group: pd.DataFrame) -> dict[str, object]:
     errors = group["predicted_demand_mw"] - group["actual_demand_mw"]
     nonzero = group["actual_demand_mw"].abs() > 1e-12
     mape = None
@@ -123,16 +142,25 @@ def _metric_row(group: pd.DataFrame) -> dict[str, object]:
             * 100
         )
     first = group.iloc[0]
+    source_first = supervised_group.iloc[0]
     return {
         "run_id": first["run_id"],
         "run_timestamp_utc": first["run_timestamp_utc"],
         "source_area": first["source_area"],
         "resource_id": first["resource_id"],
         "city": first["city"],
-        "horizon_steps": int(first["horizon_steps"]),
+        REQUESTED_HORIZON_COLUMN: int(first[REQUESTED_HORIZON_COLUMN]),
+        TARGET_TOLERANCE_COLUMN: int(first[TARGET_TOLERANCE_COLUMN]),
         "split": first["split"],
         "model_name": first["model_name"],
         "observation_count": int(len(group)),
+        "eligible_target_count": int(source_first["eligible_target_count"]),
+        "matched_target_count": int(source_first["matched_target_count"]),
+        "target_coverage_pct": float(source_first["target_coverage_pct"]),
+        "horizon_steps_avg": float(group["horizon_steps"].mean()),
+        "horizon_minutes_avg": float(group["horizon_minutes"].mean()),
+        "target_delay_minutes_avg": float(group[TARGET_DELAY_COLUMN].mean()),
+        "target_delay_minutes_max": float(group[TARGET_DELAY_COLUMN].max()),
         "mae_mw": float(errors.abs().mean()),
         "rmse_mw": float(sqrt((errors * errors).mean())),
         "mape_pct": mape,
@@ -168,7 +196,7 @@ def _evaluate_split(
     rows = _prediction_rows(
         evaluation,
         split=split,
-        model_name="persistence_lag_1",
+        model_name="persistence_current_value",
         predicted=evaluation[TARGET_COLUMN].astype(float).tolist(),
         trained_through=trained_through,
         run_id=run_id,
@@ -197,7 +225,7 @@ def run_chronological_backtest(
     run_id: str | None = None,
     run_timestamp: datetime | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Evaluate explicit future-horizon baselines without fitting on future labels."""
+    """Evaluate 30/60-minute baselines without fitting on unavailable labels."""
     config = config or BacktestConfig()
     prepared = prepare_feature_frame(frame, config)
     supervised = build_supervised_frame(prepared, config)
@@ -208,8 +236,11 @@ def run_chronological_backtest(
     run_timestamp = run_timestamp.astimezone(timezone.utc)
 
     all_predictions: list[dict[str, object]] = []
-    for _, group in supervised.groupby(GROUP_COLUMNS, sort=True, dropna=False):
+    supervised_lookup: dict[tuple[object, ...], pd.DataFrame] = {}
+    grouping_columns = [*GROUP_COLUMNS, REQUESTED_HORIZON_COLUMN]
+    for key, group in supervised.groupby(grouping_columns, sort=True, dropna=False):
         group = group.sort_values(FEATURE_TIMESTAMP_COLUMN).reset_index(drop=True)
+        supervised_lookup[key if isinstance(key, tuple) else (key,)] = group
         train, validation, test = split_group(group, config)
         all_predictions.extend(
             _evaluate_split(
@@ -247,13 +278,23 @@ def run_chronological_backtest(
         raise ForecastingContractError(
             "A forecast target did not occur after its feature timestamp."
         )
-    metrics = pd.DataFrame(
-        [
-            _metric_row(group)
-            for _, group in predictions.groupby(
-                [*GROUP_COLUMNS, "horizon_steps", "split", "model_name"], sort=True
-            )
-        ],
-        columns=METRIC_COLUMNS,
-    )
+    if not (
+        predictions["horizon_minutes"]
+        == predictions[REQUESTED_HORIZON_COLUMN] + predictions[TARGET_DELAY_COLUMN]
+    ).all():
+        raise ForecastingContractError(
+            "Forecast horizon evidence is internally inconsistent."
+        )
+
+    metric_rows: list[dict[str, object]] = []
+    metric_group_columns = [
+        *GROUP_COLUMNS,
+        REQUESTED_HORIZON_COLUMN,
+        "split",
+        "model_name",
+    ]
+    for metric_key, group in predictions.groupby(metric_group_columns, sort=True):
+        source_key = metric_key[: len(GROUP_COLUMNS) + 1]
+        metric_rows.append(_metric_row(group, supervised_lookup[source_key]))
+    metrics = pd.DataFrame(metric_rows, columns=METRIC_COLUMNS)
     return predictions.reset_index(drop=True), metrics.reset_index(drop=True)

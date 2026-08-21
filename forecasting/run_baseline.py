@@ -34,14 +34,14 @@ def _write_frame(frame: pd.DataFrame, path: Path, output_format: str) -> Path:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run purged future-horizon persistence and ridge demand baselines."
+        description="Run purged 30/60-minute persistence and ridge demand baselines."
     )
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--input", type=Path, help="Gold feature CSV or Parquet.")
     source.add_argument(
         "--demo",
         action="store_true",
-        help="Use deterministic credential-free feature data.",
+        help="Use deterministic credential-free five-minute feature data.",
     )
     parser.add_argument("--output-dir", type=Path, default=Path("data/forecasting"))
     parser.add_argument(
@@ -49,10 +49,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--ridge-alpha", type=float, default=1.0)
     parser.add_argument(
-        "--horizon-steps",
+        "--horizon-minutes",
         type=int,
-        default=1,
-        help="Number of ordered observations between feature time and target time.",
+        nargs="+",
+        choices=(30, 60),
+        default=[30, 60],
+        help="Approved elapsed-time target horizons. Defaults to both 30 and 60.",
+    )
+    parser.add_argument(
+        "--target-tolerance-minutes",
+        type=int,
+        default=5,
+        help="Maximum allowed delay for the first observation at or after the target.",
+    )
+    parser.add_argument(
+        "--min-target-coverage",
+        type=float,
+        default=0.90,
+        help="Minimum matched/eligible target coverage required per group and horizon.",
     )
     return parser
 
@@ -64,7 +78,9 @@ def main(argv: list[str] | None = None) -> int:
         frame,
         config=BacktestConfig(
             ridge_alpha=args.ridge_alpha,
-            horizon_steps=args.horizon_steps,
+            horizon_minutes=tuple(args.horizon_minutes),
+            target_tolerance_minutes=args.target_tolerance_minutes,
+            min_target_coverage=args.min_target_coverage,
         ),
     )
     predictions_path = _write_frame(
@@ -79,10 +95,11 @@ def main(argv: list[str] | None = None) -> int:
         metrics[
             [
                 "source_area",
-                "horizon_steps",
+                "requested_horizon_minutes",
                 "split",
                 "model_name",
                 "observation_count",
+                "target_coverage_pct",
                 "mae_mw",
                 "rmse_mw",
             ]

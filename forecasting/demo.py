@@ -11,13 +11,13 @@ from forecasting.contracts import (
 
 def build_demo_feature_frame(
     *,
-    periods: int = 120,
+    periods: int = 288,
     start: str = "2026-01-01T00:00:00Z",
 ) -> pd.DataFrame:
-    """Build deterministic weather-sensitive features for a credential-free demo."""
-    if periods < 60:
-        raise ForecastingContractError("Demo data requires at least 60 periods.")
-    timestamps = pd.date_range(start=start, periods=periods, freq="h", tz="UTC")
+    """Build deterministic five-minute features for 30/60-minute demos."""
+    if periods < 96:
+        raise ForecastingContractError("Demo data requires at least 96 periods.")
+    timestamps = pd.date_range(start=start, periods=periods, freq="5min", tz="UTC")
     demand_values: list[float] = []
     temperatures: list[float] = []
     humidities: list[float] = []
@@ -25,15 +25,16 @@ def build_demo_feature_frame(
         hour = timestamp.hour
         day_of_week = timestamp.dayofweek + 1
         is_weekend = int(timestamp.dayofweek >= 5)
-        temperature = 4.0 + 0.75 * ((index * 7) % 21) + 0.15 * hour
-        humidity = 55.0 + float((index * 11) % 24)
+        temperature = 5.0 + 0.18 * (index % 48) + 0.08 * hour
+        humidity = 52.0 + float((index * 7) % 22)
         demand = (
-            1550.0
-            - 24.0 * temperature
-            + 3.5 * humidity
-            + 4.0 * hour
-            + 7.0 * day_of_week
-            + 65.0 * is_weekend
+            1500.0
+            + 1.8 * index
+            - 21.0 * temperature
+            + 2.7 * humidity
+            + 3.0 * hour
+            + 5.0 * day_of_week
+            + 55.0 * is_weekend
         )
         temperatures.append(float(temperature))
         humidities.append(float(humidity))

@@ -1,11 +1,7 @@
 from datetime import datetime, timezone
 
-import json
-from pathlib import Path
-
 import pandas as pd
 import pytest
-from jsonschema import Draft202012Validator, FormatChecker
 
 from forecasting.baseline import (
     BacktestConfig,
@@ -18,38 +14,84 @@ from forecasting.baseline import (
 from forecasting.run_baseline import main
 
 
-def test_future_horizon_predictions_use_strictly_earlier_features_and_labels():
-    frame = build_demo_feature_frame(periods=144)
+def test_predictions_cover_explicit_30_and_60_minute_targets():
+    frame = build_demo_feature_frame(periods=180)
     predictions, metrics = run_chronological_backtest(
         frame,
-        config=BacktestConfig(horizon_steps=3),
-        run_id="horizon-test",
+        run_id="time-horizon-test",
         run_timestamp=datetime(2026, 8, 21, tzinfo=timezone.utc),
     )
 
-    assert set(predictions["horizon_steps"]) == {3}
-    assert (
-        predictions["trained_through_utc"] < predictions["feature_timestamp_utc"]
-    ).all()
-    assert (
-        predictions["feature_timestamp_utc"] < predictions["event_timestamp_utc"]
-    ).all()
-    assert set(predictions["horizon_minutes"]) == {180.0}
-    assert set(metrics["horizon_steps"]) == {3}
-    assert (
-        metrics["trained_through_utc"] < metrics["evaluation_feature_start_utc"]
-    ).all()
+    assert set(predictions["requested_horizon_minutes"]) == {30, 60}
+    assert set(predictions["target_delay_minutes"]) == {0.0}
+    assert set(
+        predictions.loc[
+            predictions["requested_horizon_minutes"] == 30, "horizon_steps"
+        ]
+    ) == {6}
+    assert set(
+        predictions.loc[
+            predictions["requested_horizon_minutes"] == 60, "horizon_steps"
+        ]
+    ) == {12}
+    assert set(metrics["target_coverage_pct"]) == {100.0}
+
+
+def test_missing_exact_target_uses_first_later_observation_within_tolerance():
+    frame = build_demo_feature_frame(periods=160)
+    missing_timestamp = frame.loc[40, "event_timestamp_utc"]
+    frame = frame.loc[frame["event_timestamp_utc"] != missing_timestamp].reset_index(
+        drop=True
+    )
+    config = BacktestConfig(
+        horizon_minutes=(30,),
+        target_tolerance_minutes=5,
+        min_target_coverage=0.95,
+    )
+    supervised = build_supervised_frame(prepare_feature_frame(frame, config), config)
+
+    delayed = supervised.loc[supervised["target_delay_minutes"] == 5.0]
+    assert not delayed.empty
+    assert (delayed["horizon_minutes"] == 35.0).all()
+
+
+def test_irregular_observation_count_does_not_change_requested_time_horizon():
+    frame = build_demo_feature_frame(periods=160)
+    frame = frame.drop(index=[25]).reset_index(drop=True)
+    config = BacktestConfig(
+        horizon_minutes=(30,),
+        target_tolerance_minutes=5,
+        min_target_coverage=0.95,
+    )
+    supervised = build_supervised_frame(prepare_feature_frame(frame, config), config)
+
+    exact = supervised.loc[supervised["target_delay_minutes"] == 0.0]
+    assert set(exact["horizon_minutes"]) == {30.0}
+    assert set(exact["horizon_steps"]) == {5, 6}
+
+
+def test_gap_beyond_tolerance_fails_target_coverage_contract():
+    frame = build_demo_feature_frame(periods=160)
+    frame = frame.drop(index=[40, 41]).reset_index(drop=True)
+    config = BacktestConfig(
+        horizon_minutes=(30,),
+        target_tolerance_minutes=5,
+        min_target_coverage=1.0,
+    )
+
+    with pytest.raises(ForecastingContractError, match="minimum coverage"):
+        build_supervised_frame(prepare_feature_frame(frame, config), config)
 
 
 def test_persistence_uses_current_demand_for_future_target():
-    frame = build_demo_feature_frame(periods=120)
+    frame = build_demo_feature_frame(periods=180)
     predictions, _ = run_chronological_backtest(
         frame,
-        config=BacktestConfig(horizon_steps=2),
+        config=BacktestConfig(horizon_minutes=(60,)),
         run_id="persistence-test",
     )
     persistence = predictions.loc[
-        predictions["model_name"] == "persistence_lag_1"
+        predictions["model_name"] == "persistence_current_value"
     ]
 
     assert (
@@ -57,32 +99,22 @@ def test_persistence_uses_current_demand_for_future_target():
     ).all()
 
 
-def test_supervised_frame_shifts_targets_within_each_group():
-    frame = build_demo_feature_frame(periods=80)
-    prepared = prepare_feature_frame(frame, BacktestConfig(horizon_steps=4))
-    supervised = build_supervised_frame(prepared, BacktestConfig(horizon_steps=4))
+def test_unsupported_time_horizon_is_rejected():
+    frame = build_demo_feature_frame(periods=120)
 
-    assert len(supervised) == len(prepared) - 4
-    assert (
-        supervised["target_timestamp_utc"] - supervised["feature_timestamp_utc"]
-        == pd.Timedelta(hours=4)
-    ).all()
-    assert supervised.iloc[0]["target_demand_mw"] == prepared.iloc[4]["demand_mw"]
+    with pytest.raises(ForecastingContractError, match="Unsupported horizon_minutes=45"):
+        prepare_feature_frame(frame, BacktestConfig(horizon_minutes=(45,)))
 
 
-def test_invalid_horizon_is_rejected():
-    frame = build_demo_feature_frame(periods=80)
-
-    with pytest.raises(ForecastingContractError, match="horizon_steps"):
-        prepare_feature_frame(frame, BacktestConfig(horizon_steps=0))
-
-
-def test_cli_accepts_explicit_horizon(tmp_path):
+def test_cli_accepts_both_approved_time_horizons(tmp_path):
     exit_code = main(
         [
             "--demo",
-            "--horizon-steps",
-            "3",
+            "--horizon-minutes",
+            "30",
+            "60",
+            "--target-tolerance-minutes",
+            "5",
             "--output-dir",
             str(tmp_path),
             "--output-format",
@@ -92,32 +124,4 @@ def test_cli_accepts_explicit_horizon(tmp_path):
 
     assert exit_code == 0
     predictions = pd.read_csv(tmp_path / "baseline_predictions.csv")
-    assert set(predictions["horizon_steps"]) == {3}
-
-
-def test_prediction_rows_satisfy_horizon_contract():
-    frame = build_demo_feature_frame(periods=96)
-    predictions, _ = run_chronological_backtest(
-        frame,
-        config=BacktestConfig(horizon_steps=2),
-        run_id="contract-test",
-        run_timestamp=datetime(2026, 8, 21, tzinfo=timezone.utc),
-    )
-    contract_path = (
-        Path(__file__).resolve().parents[1]
-        / "data-contracts"
-        / "forecast_evaluation_schema.json"
-    )
-    contract = json.loads(contract_path.read_text(encoding="utf-8"))
-    validator = Draft202012Validator(contract, format_checker=FormatChecker())
-    row = predictions.iloc[0].to_dict()
-    for timestamp_column in (
-        "run_timestamp_utc",
-        "feature_timestamp_utc",
-        "event_timestamp_utc",
-        "trained_through_utc",
-    ):
-        row[timestamp_column] = pd.Timestamp(row[timestamp_column]).isoformat()
-
-    errors = list(validator.iter_errors(row))
-    assert errors == []
+    assert set(predictions["requested_horizon_minutes"]) == {30, 60}

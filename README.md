@@ -14,8 +14,7 @@ This project implements a Microsoft Fabric medallion pipeline that:
 - propagates source-area and file-level provenance through silver tables;
 - joins only same-area weather at or before each demand timestamp;
 - builds causal lag, rolling, calendar, weather, and aggregation features;
-- creates explicit future demand targets using a configurable ordered-observation horizon;
-- purges training labels that would not be available at evaluation feature time;
+- creates explicit future demand targets and purges unavailable labels;
 - evaluates persistence and regularised linear baselines with chronological train, validation, and test boundaries;
 - appends prediction and metric evidence to Delta tables; and
 - records blocking and warning data-quality results in `dq_run_results`.
@@ -50,9 +49,8 @@ silver_weather + silver_energy
 gold_weather_demand_join
         ↓ prior-demand lags/rolling windows + causal weather/calendar features
 gold_feature_engineering
-        ↓ feature time --HORIZON_STEPS--> future demand target
-        ↓ chronological split + overlapping-label purge
-persistence_lag_1 + ridge_weather_lag
+        ↓ explicit future target + chronological split + label purge
+persistence_current_value + ridge_weather_lag
         ↓
 forecast_baseline_predictions + forecast_baseline_metrics
         ↓
@@ -61,32 +59,38 @@ SQL endpoint / Power BI / model comparison
 
 For each demand observation, the gold join selects the latest weather observation from the same `source_area` whose timestamp is no later than demand time and no more than six hours old. Demand rolling features exclude the current row.
 
-Forecast evidence distinguishes:
-
-- `feature_timestamp_utc` — when the input values were available;
-- `event_timestamp_utc` — the future target timestamp;
-- `horizon_steps` — ordered observations between feature and target;
-- `horizon_minutes` — observed elapsed time;
-- `trained_through_utc` — latest target label used for fitting.
-
 Every prediction must satisfy:
 
 ```text
 trained_through_utc < feature_timestamp_utc < event_timestamp_utc
 ```
 
-## Credential-free forecasting demo
+## Credential-free time-horizon demo
 
-The local benchmark requires no API credentials and writes reproducible CSV or Parquet evidence:
+The local benchmark now evaluates the approved 30- and 60-minute service horizons in one run:
 
 ```bash
 python3 -m pip install -r requirements.txt
 python3 -m forecasting.run_baseline \
   --demo \
-  --horizon-steps 3 \
+  --horizon-minutes 30 60 \
+  --target-tolerance-minutes 5 \
+  --min-target-coverage 0.90 \
   --output-dir data/forecasting \
   --output-format csv
 ```
+
+For each feature timestamp, target selection chooses the first observation at or after the requested horizon. The observation must arrive within the configured tolerance. Trailing rows without enough future history are excluded from the coverage denominator; missing targets inside retained history reduce coverage and fail the run when the configured minimum is not met.
+
+Forecast evidence distinguishes:
+
+- `requested_horizon_minutes` — the 30- or 60-minute service target;
+- `target_tolerance_minutes` — maximum permitted late match;
+- `horizon_minutes` — actual elapsed time to the matched observation;
+- `target_delay_minutes` — delay beyond the requested horizon;
+- `horizon_steps` — actual ordered-observation distance, retained for diagnostics;
+- `feature_timestamp_utc` and `event_timestamp_utc` — feature and target times;
+- `trained_through_utc` — latest target label used for fitting.
 
 Outputs:
 
@@ -95,20 +99,20 @@ Outputs:
 
 The demo compares:
 
-- `persistence_lag_1` — demand at feature time carried forward to the future target;
-- `ridge_weather_lag` — regularised linear demand model using only information available at feature time.
+- `persistence_current_value` — demand at feature time carried forward;
+- `ridge_weather_lag` — regularised linear demand model using information available at feature time.
 
 For exported Fabric features, replace `--demo` with:
 
 ```bash
 python3 -m forecasting.run_baseline \
   --input gold_feature_engineering.parquet \
-  --horizon-steps 1 \
+  --horizon-minutes 30 60 \
   --output-dir data/forecasting \
   --output-format parquet
 ```
 
-`horizon_steps` is observation-based. Inspect `horizon_minutes` when source intervals may be irregular.
+The local implementation is time-based. The current Fabric notebook still uses `HORIZON_STEPS`; a dependent parity increment replaces that parameter with the same bounded 30/60-minute matching contract.
 
 ## Local ingestion development
 
@@ -144,10 +148,10 @@ Energy ingestion requests CKAN pages in ascending `_id` order until the total re
 3. Import notebook sources `01` through `06` from `fabric/notebooks/`.
 4. Create `weather_energy_demand_pipeline` from `fabric/pipelines/weather_energy_demand_pipeline.md`.
 5. Supply secure credentials and a consistent `SOURCE_AREA`, `WEATHER_CITY`, and `NATIONAL_GRID_RESOURCE_ID`.
-6. Choose `HORIZON_STEPS` and run ingestion, silver, gold, source/gold quality, future-horizon forecasting, and forecast quality in order.
+6. Run ingestion, silver, gold, source/gold quality, forecasting, and forecast quality in order.
 7. Optionally create pass-through SQL views from `fabric/sql/gold_views_tsql.sql` and `fabric/sql/forecast_views_tsql.sql`.
 8. Enable the schedule only after source quotas and Fabric capacity are confirmed.
 
 ## Forecasting boundary
 
-The implemented benchmark creates genuine future targets and prevents overlapping-label leakage, but it still uses observed weather at feature time. A production forward forecast would additionally require forecast-weather inputs, time-based service-level horizons, rolling-origin evaluation, drift monitoring, and a model promotion process.
+The local benchmark now creates explicit 30- and 60-minute targets and handles missing or irregular intervals through bounded matching and coverage evidence. It still uses observed weather at feature time. A production forward forecast additionally requires forecast-weather inputs, rolling-origin evaluation, drift monitoring, and a model promotion process.
