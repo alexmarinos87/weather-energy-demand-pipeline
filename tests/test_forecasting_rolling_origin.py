@@ -112,10 +112,33 @@ def test_too_many_origins_for_validation_history_is_rejected():
         )
 
 
+def test_cli_preserves_fixed_holdout_as_default(tmp_path):
+    exit_code = main(
+        [
+            "--demo",
+            "--horizon-minutes",
+            "30",
+            "--output-dir",
+            str(tmp_path),
+            "--output-format",
+            "csv",
+        ]
+    )
+
+    assert exit_code == 0
+    predictions = pd.read_csv(tmp_path / "baseline_predictions.csv")
+    metrics = pd.read_csv(tmp_path / "baseline_metrics.csv")
+    assert set(predictions["split"]) == {"validation", "test"}
+    assert "origin_fold" not in predictions.columns
+    assert "origin_fold" not in metrics.columns
+
+
 def test_cli_accepts_rolling_origin_count(tmp_path):
     exit_code = main(
         [
             "--demo",
+            "--evaluation-mode",
+            "rolling-origin",
             "--horizon-minutes",
             "30",
             "--rolling-origin-folds",
@@ -128,11 +151,12 @@ def test_cli_accepts_rolling_origin_count(tmp_path):
     )
 
     assert exit_code == 0
-    predictions = pd.read_csv(tmp_path / "baseline_predictions.csv")
-    metrics = pd.read_csv(tmp_path / "baseline_metrics.csv")
+    predictions = pd.read_csv(tmp_path / "rolling_origin_predictions.csv")
+    metrics = pd.read_csv(tmp_path / "rolling_origin_metrics.csv")
     assert set(predictions["origin_fold"]) == {1, 2, 3, 4}
     assert set(predictions["origin_count"]) == {4}
     assert set(metrics["evaluation_contract_version"]) == {"rolling-origin-v1"}
+    assert not (tmp_path / "baseline_predictions.csv").exists()
 
 
 def test_prediction_rows_satisfy_rolling_origin_contract():
