@@ -1,10 +1,10 @@
 # Rolling-origin demand backtesting
 
-The local forecasting runner now evaluates the 30- and 60-minute baselines at repeated historical cutoffs instead of relying on one validation window and one test window.
+The local forecasting runner retains the existing fixed validation/test holdout as its default. Rolling-origin evaluation is an explicit mode for checking the 30- and 60-minute baselines at repeated historical cutoffs.
 
 ## Contract
 
-The default `--rolling-origin-folds 3` produces:
+With `--evaluation-mode rolling-origin`, the default `--rolling-origin-folds 3` produces:
 
 1. an expanding-window validation origin;
 2. a later expanding-window validation origin; and
@@ -24,14 +24,31 @@ The run rejects incomplete fold sequences, decreasing cutoffs, decreasing availa
 
 ## Run locally
 
+Fixed holdout remains the default:
+
 ```bash
 python3 -m forecasting.run_baseline \
   --demo \
+  --horizon-minutes 30 60 \
+  --output-dir data/forecasting \
+  --output-format csv
+```
+
+This writes `baseline_predictions.csv` and `baseline_metrics.csv`.
+
+Select rolling-origin evaluation explicitly:
+
+```bash
+python3 -m forecasting.run_baseline \
+  --demo \
+  --evaluation-mode rolling-origin \
   --horizon-minutes 30 60 \
   --rolling-origin-folds 3 \
   --output-dir data/forecasting \
   --output-format csv
 ```
+
+This writes `rolling_origin_predictions.csv` and `rolling_origin_metrics.csv`, so it cannot silently overwrite fixed-holdout evidence.
 
 `data-contracts/rolling_origin_evaluation_schema.json` defines the additional origin evidence. Prediction rows continue to satisfy the existing time-horizon evidence contract as well.
 
