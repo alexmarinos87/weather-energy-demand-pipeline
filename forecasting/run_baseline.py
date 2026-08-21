@@ -8,7 +8,7 @@ import pandas as pd
 from forecasting.baseline import (
     BacktestConfig,
     build_demo_feature_frame,
-    run_chronological_backtest,
+    run_rolling_origin_backtest,
 )
 
 
@@ -34,7 +34,10 @@ def _write_frame(frame: pd.DataFrame, path: Path, output_format: str) -> Path:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run purged 30/60-minute persistence and ridge demand baselines."
+        description=(
+            "Run purged rolling-origin 30/60-minute persistence and ridge "
+            "demand baselines."
+        )
     )
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--input", type=Path, help="Gold feature CSV or Parquet.")
@@ -60,13 +63,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--target-tolerance-minutes",
         type=int,
         default=5,
-        help="Maximum allowed delay for the first observation at or after the target.",
+        help="Maximum allowed delay for the first observation at or after target time.",
     )
     parser.add_argument(
         "--min-target-coverage",
         type=float,
         default=0.90,
-        help="Minimum matched/eligible target coverage required per group and horizon.",
+        help="Minimum matched/eligible target coverage per group and horizon.",
+    )
+    parser.add_argument(
+        "--rolling-origin-folds",
+        type=int,
+        default=3,
+        help=(
+            "Total expanding-window origins. All but the final origin evaluate "
+            "validation history; the final origin evaluates the untouched test window."
+        ),
     )
     return parser
 
@@ -74,7 +86,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     frame = build_demo_feature_frame() if args.demo else _read_frame(args.input)
-    predictions, metrics = run_chronological_backtest(
+    predictions, metrics = run_rolling_origin_backtest(
         frame,
         config=BacktestConfig(
             ridge_alpha=args.ridge_alpha,
@@ -82,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
             target_tolerance_minutes=args.target_tolerance_minutes,
             min_target_coverage=args.min_target_coverage,
         ),
+        origin_count=args.rolling_origin_folds,
     )
     predictions_path = _write_frame(
         predictions, args.output_dir / "baseline_predictions", args.output_format
@@ -96,8 +109,11 @@ def main(argv: list[str] | None = None) -> int:
             [
                 "source_area",
                 "requested_horizon_minutes",
+                "origin_fold",
+                "origin_count",
                 "split",
                 "model_name",
+                "training_observation_count",
                 "observation_count",
                 "target_coverage_pct",
                 "mae_mw",
