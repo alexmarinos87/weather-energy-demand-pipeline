@@ -23,7 +23,16 @@
     "forecast_temperature_c": {"type": "number"},
     "forecast_humidity_pct": {"type": "number", "minimum": 0, "maximum": 100},
     "forecast_provider": {"type": "string", "minLength": 1},
-    "forecast_model": {"type": "string", "minLength": 1}
+    "forecast_model": {"type": "string", "minLength": 1},
+    "forecast_issue_basis": {
+      "type": "string",
+      "enum": ["provider_issued_at", "retrieval_time_surrogate"]
+    },
+    "forecast_retrieved_at_utc": {"type": "string", "format": "date-time"},
+    "forecast_provider_record_id": {"type": "string", "minLength": 1},
+    "forecast_latitude": {"type": "number", "minimum": -90, "maximum": 90},
+    "forecast_longitude": {"type": "number", "minimum": -180, "maximum": 180},
+    "raw_snapshot_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
   },
   "additionalProperties": true
 }

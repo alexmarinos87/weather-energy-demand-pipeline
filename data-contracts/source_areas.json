@@ -1,26 +1,34 @@
 {
-  "contract_version": "1.0.0",
-  "description": "Project-owned binding between NGED Live Data licence-area resources and representative OpenWeather city proxies.",
+  "contract_version": "1.1.0",
+  "description": "Project-owned binding between NGED Live Data licence-area resources and representative OpenWeather city proxies and coordinates.",
   "areas": {
     "east_midlands": {
       "display_name": "East Midlands",
       "nged_resource_id": "92d3431c-15d7-4aa6-ad34-2335596a026c",
-      "weather_proxy_city": "Nottingham,GB"
+      "weather_proxy_city": "Nottingham,GB",
+      "weather_proxy_latitude": 52.9548,
+      "weather_proxy_longitude": -1.1581
     },
     "south_wales": {
       "display_name": "South Wales",
       "nged_resource_id": "38b81427-a2df-42f2-befa-4d6fe9b54c98",
-      "weather_proxy_city": "Cardiff,GB"
+      "weather_proxy_city": "Cardiff,GB",
+      "weather_proxy_latitude": 51.4816,
+      "weather_proxy_longitude": -3.1791
     },
     "south_west": {
       "display_name": "South West",
       "nged_resource_id": "85aaa199-15df-40ec-845f-6c61cbedc20f",
-      "weather_proxy_city": "Bristol,GB"
+      "weather_proxy_city": "Bristol,GB",
+      "weather_proxy_latitude": 51.4545,
+      "weather_proxy_longitude": -2.5879
     },
     "west_midlands": {
       "display_name": "West Midlands",
       "nged_resource_id": "1c3447df-37d7-4fb4-9f99-0e2a0d691dbe",
-      "weather_proxy_city": "Birmingham,GB"
+      "weather_proxy_city": "Birmingham,GB",
+      "weather_proxy_latitude": 52.4862,
+      "weather_proxy_longitude": -1.8904
     }
   }
 }

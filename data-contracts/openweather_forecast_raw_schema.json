@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "openweather_5_day_3_hour_forecast_raw_v1",
+  "description": "Raw OpenWeather 5 day / 3 hour forecast response captured before normalization.",
+  "type": "object",
+  "required": ["cod", "message", "cnt", "list", "city"],
+  "properties": {
+    "cod": {
+      "oneOf": [
+        {"type": "string", "const": "200"},
+        {"type": "integer", "const": 200}
+      ]
+    },
+    "message": {"type": "number"},
+    "cnt": {"type": "integer", "minimum": 1, "maximum": 40},
+    "list": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 40,
+      "items": {
+        "type": "object",
+        "required": ["dt", "main"],
+        "properties": {
+          "dt": {"type": "integer", "minimum": 1},
+          "main": {
+            "type": "object",
+            "required": ["temp", "humidity"],
+            "properties": {
+              "temp": {"type": "number"},
+              "humidity": {"type": "number", "minimum": 0, "maximum": 100}
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "city": {
+      "type": "object",
+      "required": ["id", "name", "country", "coord", "timezone"],
+      "properties": {
+        "id": {"type": "integer"},
+        "name": {"type": "string", "minLength": 1},
+        "country": {"type": "string", "minLength": 2, "maxLength": 2},
+        "timezone": {"type": "integer"},
+        "coord": {
+          "type": "object",
+          "required": ["lat", "lon"],
+          "properties": {
+            "lat": {"type": "number", "minimum": -90, "maximum": 90},
+            "lon": {"type": "number", "minimum": -180, "maximum": 180}
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "_pipeline_metadata": {
+      "type": "object",
+      "properties": {
+        "dataset": {"const": "forecast_weather"},
+        "provider": {"const": "openweather"},
+        "product": {"const": "5_day_3_hour"},
+        "forecast_issue_basis": {"const": "retrieval_time_surrogate"},
+        "retrieved_at_utc": {"type": "string", "format": "date-time"},
+        "raw_snapshot_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

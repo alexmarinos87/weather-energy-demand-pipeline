@@ -3,3 +3,4 @@ __pycache__/
 .env
 data/
 ingestion/weather/config.yaml
+ingestion/forecast_weather/config.yaml

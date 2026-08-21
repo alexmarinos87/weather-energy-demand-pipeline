@@ -1,6 +1,7 @@
 import json
 from copy import deepcopy
 from functools import lru_cache
+from math import isfinite
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,18 @@ def normalize_source_area(value: Any) -> str:
     return normalized
 
 
+def _coordinate(value: Any, name: str, *, minimum: float, maximum: float) -> float:
+    if isinstance(value, bool):
+        raise SourceAreaError(f"{name} must be a finite number.")
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise SourceAreaError(f"{name} must be a finite number.") from exc
+    if not isfinite(parsed) or not minimum <= parsed <= maximum:
+        raise SourceAreaError(f"{name} must be between {minimum} and {maximum}.")
+    return parsed
+
+
 @lru_cache(maxsize=8)
 def _load_contract(contract_path: str) -> dict[str, Any]:
     path = Path(contract_path)
@@ -36,6 +49,7 @@ def _load_contract(contract_path: str) -> dict[str, Any]:
         raise SourceAreaError("source_areas.json must define at least one area.")
 
     resource_ids: set[str] = set()
+    coordinates: set[tuple[float, float]] = set()
     for area_key, area in areas.items():
         if normalize_source_area(area_key) != area_key:
             raise SourceAreaError(
@@ -43,7 +57,13 @@ def _load_contract(contract_path: str) -> dict[str, Any]:
             )
         if not isinstance(area, dict):
             raise SourceAreaError(f"Source-area {area_key!r} must be an object.")
-        required = {"display_name", "nged_resource_id", "weather_proxy_city"}
+        required = {
+            "display_name",
+            "nged_resource_id",
+            "weather_proxy_city",
+            "weather_proxy_latitude",
+            "weather_proxy_longitude",
+        }
         missing = sorted(required - set(area))
         if missing:
             raise SourceAreaError(
@@ -55,6 +75,24 @@ def _load_contract(contract_path: str) -> dict[str, Any]:
                 f"NGED resource ID {resource_id!r} is assigned more than once."
             )
         resource_ids.add(resource_id)
+        latitude = _coordinate(
+            area["weather_proxy_latitude"],
+            f"{area_key}.weather_proxy_latitude",
+            minimum=-90.0,
+            maximum=90.0,
+        )
+        longitude = _coordinate(
+            area["weather_proxy_longitude"],
+            f"{area_key}.weather_proxy_longitude",
+            minimum=-180.0,
+            maximum=180.0,
+        )
+        coordinate = (latitude, longitude)
+        if coordinate in coordinates:
+            raise SourceAreaError(
+                f"Weather proxy coordinates {coordinate!r} are assigned more than once."
+            )
+        coordinates.add(coordinate)
 
     return contract
 
@@ -62,15 +100,13 @@ def _load_contract(contract_path: str) -> dict[str, Any]:
 def load_source_area_contract(
     contract_path: Path = SOURCE_AREAS_CONTRACT_PATH,
 ) -> dict[str, Any]:
-    """Load and validate the source-area mapping contract."""
     return deepcopy(_load_contract(str(contract_path.resolve())))
 
 
 def resolve_source_area(
     source_area: Any,
     contract_path: Path = SOURCE_AREAS_CONTRACT_PATH,
-) -> dict[str, str]:
-    """Resolve a normalized source-area key to its canonical binding."""
+) -> dict[str, Any]:
     normalized = normalize_source_area(source_area)
     contract = load_source_area_contract(contract_path)
     area = contract["areas"].get(normalized)
@@ -85,6 +121,8 @@ def resolve_source_area(
         "source_area_name": str(area["display_name"]),
         "nged_resource_id": str(area["nged_resource_id"]),
         "weather_proxy_city": str(area["weather_proxy_city"]),
+        "weather_proxy_latitude": float(area["weather_proxy_latitude"]),
+        "weather_proxy_longitude": float(area["weather_proxy_longitude"]),
     }
 
 
@@ -94,10 +132,8 @@ def validate_source_binding(
     nged_resource_id: str | None = None,
     weather_city: str | None = None,
     contract_path: Path = SOURCE_AREAS_CONTRACT_PATH,
-) -> dict[str, str]:
-    """Reject cross-area source combinations before any network request."""
+) -> dict[str, Any]:
     binding = resolve_source_area(source_area, contract_path)
-
     if nged_resource_id is not None:
         actual_resource_id = str(nged_resource_id).strip()
         if actual_resource_id != binding["nged_resource_id"]:
@@ -105,7 +141,6 @@ def validate_source_binding(
                 f"source_area={binding['source_area']!r} requires NGED resource "
                 f"{binding['nged_resource_id']!r}, got {actual_resource_id!r}."
             )
-
     if weather_city is not None:
         actual_city = str(weather_city).strip()
         if actual_city.casefold() != binding["weather_proxy_city"].casefold():
@@ -113,7 +148,6 @@ def validate_source_binding(
                 f"source_area={binding['source_area']!r} requires weather proxy "
                 f"{binding['weather_proxy_city']!r}, got {actual_city!r}."
             )
-
     return binding
 
 
@@ -121,12 +155,12 @@ def attach_pipeline_metadata(
     payload: dict[str, Any],
     *,
     dataset_name: str,
-    binding: dict[str, str],
+    binding: dict[str, Any],
 ) -> dict[str, Any]:
-    """Attach source-area provenance without mutating the API response object."""
-    if dataset_name not in {"weather", "energy"}:
-        raise ValueError("dataset_name must be either 'weather' or 'energy'.")
-
+    if dataset_name not in {"weather", "forecast_weather", "energy"}:
+        raise ValueError(
+            "dataset_name must be weather, forecast_weather, or energy."
+        )
     enriched = deepcopy(payload)
     enriched["_pipeline_metadata"] = {
         "contract_version": binding["contract_version"],
@@ -135,5 +169,7 @@ def attach_pipeline_metadata(
         "source_area_name": binding["source_area_name"],
         "nged_resource_id": binding["nged_resource_id"],
         "weather_proxy_city": binding["weather_proxy_city"],
+        "weather_proxy_latitude": binding["weather_proxy_latitude"],
+        "weather_proxy_longitude": binding["weather_proxy_longitude"],
     }
     return enriched
