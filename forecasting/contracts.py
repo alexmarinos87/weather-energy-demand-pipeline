@@ -12,6 +12,10 @@ FEATURE_TIMESTAMP_COLUMN = "feature_timestamp_utc"
 TARGET_TIMESTAMP_COLUMN = "target_timestamp_utc"
 TARGET_COLUMN = "demand_mw"
 SUPERVISED_TARGET_COLUMN = "target_demand_mw"
+REQUESTED_HORIZON_COLUMN = "requested_horizon_minutes"
+TARGET_TOLERANCE_COLUMN = "target_tolerance_minutes"
+TARGET_DELAY_COLUMN = "target_delay_minutes"
+SUPPORTED_HORIZON_MINUTES = (30, 60)
 DEFAULT_FEATURE_COLUMNS = [
     "demand_mw",
     "demand_lag_1",
@@ -37,9 +41,11 @@ class BacktestConfig:
     min_validation_rows: int = 6
     min_test_rows: int = 6
     ridge_alpha: float = 1.0
-    horizon_steps: int = 1
+    horizon_minutes: tuple[int, ...] = SUPPORTED_HORIZON_MINUTES
+    target_tolerance_minutes: int = 5
+    min_target_coverage: float = 0.90
     feature_columns: tuple[str, ...] = tuple(DEFAULT_FEATURE_COLUMNS)
-    feature_contract_version: str = "horizon-v1"
+    feature_contract_version: str = "time-horizon-v1"
 
     def validate(self) -> None:
         if not 0 < self.train_fraction < 1:
@@ -57,10 +63,38 @@ class BacktestConfig:
                 raise ForecastingContractError(f"{name} must be at least 1.")
         if self.ridge_alpha <= 0:
             raise ForecastingContractError("ridge_alpha must be positive.")
-        if isinstance(self.horizon_steps, bool) or self.horizon_steps < 1:
-            raise ForecastingContractError("horizon_steps must be at least 1.")
+        if not self.horizon_minutes:
+            raise ForecastingContractError("At least one time horizon is required.")
+        if len(set(self.horizon_minutes)) != len(self.horizon_minutes):
+            raise ForecastingContractError("horizon_minutes must not contain duplicates.")
+        for horizon in self.horizon_minutes:
+            if isinstance(horizon, bool) or not isinstance(horizon, int):
+                raise ForecastingContractError(
+                    "horizon_minutes must contain positive integers."
+                )
+            if horizon not in SUPPORTED_HORIZON_MINUTES:
+                supported = ", ".join(str(value) for value in SUPPORTED_HORIZON_MINUTES)
+                raise ForecastingContractError(
+                    f"Unsupported horizon_minutes={horizon}; supported values: {supported}."
+                )
+        if (
+            isinstance(self.target_tolerance_minutes, bool)
+            or not isinstance(self.target_tolerance_minutes, int)
+            or self.target_tolerance_minutes < 0
+        ):
+            raise ForecastingContractError(
+                "target_tolerance_minutes must be a non-negative integer."
+            )
+        if not 0 < self.min_target_coverage <= 1:
+            raise ForecastingContractError(
+                "min_target_coverage must be greater than 0 and at most 1."
+            )
         if not self.feature_columns:
             raise ForecastingContractError("At least one feature column is required.")
+
+    @property
+    def ordered_horizons(self) -> tuple[int, ...]:
+        return tuple(sorted(self.horizon_minutes))
 
 
 def prepare_feature_frame(
@@ -115,46 +149,125 @@ def prepare_feature_frame(
     return prepared.reset_index(drop=True)
 
 
+def _group_identity(group: pd.DataFrame) -> str:
+    first = group.iloc[0]
+    return "/".join(str(first[column]) for column in GROUP_COLUMNS)
+
+
+def _match_horizon(
+    ordered: pd.DataFrame,
+    *,
+    requested_horizon_minutes: int,
+    config: BacktestConfig,
+) -> pd.DataFrame:
+    timestamps = pd.DatetimeIndex(ordered[TIMESTAMP_COLUMN])
+    maximum_timestamp = timestamps[-1]
+    requested_delta = pd.Timedelta(minutes=requested_horizon_minutes)
+    tolerance_delta = pd.Timedelta(minutes=config.target_tolerance_minutes)
+
+    eligible_count = 0
+    matches: list[dict[str, object]] = []
+    for feature_position, feature_timestamp in enumerate(timestamps):
+        ideal_target_timestamp = feature_timestamp + requested_delta
+        if ideal_target_timestamp > maximum_timestamp:
+            continue
+        eligible_count += 1
+        target_position = int(timestamps.searchsorted(ideal_target_timestamp, side="left"))
+        if target_position >= len(timestamps) or target_position <= feature_position:
+            continue
+        target_timestamp = timestamps[target_position]
+        target_delay = target_timestamp - ideal_target_timestamp
+        if target_delay < pd.Timedelta(0) or target_delay > tolerance_delta:
+            continue
+        source_row = ordered.iloc[feature_position].to_dict()
+        source_row.update(
+            {
+                FEATURE_TIMESTAMP_COLUMN: feature_timestamp,
+                TARGET_TIMESTAMP_COLUMN: target_timestamp,
+                SUPERVISED_TARGET_COLUMN: float(
+                    ordered.iloc[target_position][TARGET_COLUMN]
+                ),
+                REQUESTED_HORIZON_COLUMN: requested_horizon_minutes,
+                TARGET_TOLERANCE_COLUMN: config.target_tolerance_minutes,
+                "horizon_steps": target_position - feature_position,
+                "horizon_minutes": (
+                    target_timestamp - feature_timestamp
+                ).total_seconds()
+                / 60.0,
+                TARGET_DELAY_COLUMN: target_delay.total_seconds() / 60.0,
+            }
+        )
+        matches.append(source_row)
+
+    if eligible_count == 0:
+        raise ForecastingContractError(
+            f"Group {_group_identity(ordered)} has no eligible rows for the "
+            f"{requested_horizon_minutes}-minute horizon."
+        )
+    matched_count = len(matches)
+    coverage = matched_count / eligible_count
+    if coverage < config.min_target_coverage:
+        raise ForecastingContractError(
+            f"Group {_group_identity(ordered)} matched {matched_count}/{eligible_count} "
+            f"eligible targets for the {requested_horizon_minutes}-minute horizon "
+            f"({coverage:.1%}); minimum coverage is {config.min_target_coverage:.1%}."
+        )
+    matched = pd.DataFrame(matches)
+    if matched.empty:
+        raise ForecastingContractError(
+            f"Group {_group_identity(ordered)} produced no target matches for the "
+            f"{requested_horizon_minutes}-minute horizon."
+        )
+    matched["eligible_target_count"] = eligible_count
+    matched["matched_target_count"] = matched_count
+    matched["target_coverage_pct"] = coverage * 100.0
+    return matched
+
+
 def build_supervised_frame(
     prepared: pd.DataFrame,
     config: BacktestConfig,
 ) -> pd.DataFrame:
-    """Attach an explicit future target to each causal feature row."""
+    """Match causal feature rows to explicit future targets in elapsed time."""
     config.validate()
     supervised_groups: list[pd.DataFrame] = []
     for _, group in prepared.groupby(GROUP_COLUMNS, sort=True, dropna=False):
-        ordered = group.sort_values(TIMESTAMP_COLUMN).copy()
-        ordered[FEATURE_TIMESTAMP_COLUMN] = ordered[TIMESTAMP_COLUMN]
-        ordered[TARGET_TIMESTAMP_COLUMN] = ordered[TIMESTAMP_COLUMN].shift(
-            -config.horizon_steps
-        )
-        ordered[SUPERVISED_TARGET_COLUMN] = ordered[TARGET_COLUMN].shift(
-            -config.horizon_steps
-        )
-        ordered = ordered.dropna(
-            subset=[TARGET_TIMESTAMP_COLUMN, SUPERVISED_TARGET_COLUMN]
-        )
-        supervised_groups.append(ordered)
+        ordered = group.sort_values(TIMESTAMP_COLUMN).reset_index(drop=True)
+        for requested_horizon in config.ordered_horizons:
+            supervised_groups.append(
+                _match_horizon(
+                    ordered,
+                    requested_horizon_minutes=requested_horizon,
+                    config=config,
+                )
+            )
 
     if not supervised_groups:
         raise ForecastingContractError("No forecast groups are available.")
     supervised = pd.concat(supervised_groups, ignore_index=True)
-    if supervised.empty:
-        raise ForecastingContractError(
-            "No rows remain after applying the configured forecast horizon."
-        )
     if not (
         supervised[FEATURE_TIMESTAMP_COLUMN] < supervised[TARGET_TIMESTAMP_COLUMN]
     ).all():
         raise ForecastingContractError(
             "Forecast targets must occur after their feature timestamps."
         )
-    supervised["horizon_minutes"] = (
-        supervised[TARGET_TIMESTAMP_COLUMN] - supervised[FEATURE_TIMESTAMP_COLUMN]
-    ).dt.total_seconds() / 60.0
-    if (supervised["horizon_minutes"] <= 0).any():
-        raise ForecastingContractError("Forecast horizons must be positive.")
-    return supervised.reset_index(drop=True)
+    if not (
+        supervised["horizon_minutes"] >= supervised[REQUESTED_HORIZON_COLUMN]
+    ).all():
+        raise ForecastingContractError(
+            "Matched forecast targets must not occur before the requested horizon."
+        )
+    if not (
+        supervised[TARGET_DELAY_COLUMN].between(
+            0, config.target_tolerance_minutes, inclusive="both"
+        )
+    ).all():
+        raise ForecastingContractError(
+            "Matched forecast targets exceeded the configured tolerance."
+        )
+    return supervised.sort_values(
+        [*GROUP_COLUMNS, REQUESTED_HORIZON_COLUMN, FEATURE_TIMESTAMP_COLUMN]
+    ).reset_index(drop=True)
 
 
 def split_group(
