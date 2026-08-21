@@ -19,19 +19,33 @@ def test_target_rolling_feature_excludes_current_demand_row():
     assert "CURRENT ROW" not in demand_section
 
 
-def test_fabric_backtest_builds_explicit_future_targets():
+def test_fabric_backtest_builds_bounded_time_targets():
     notebook = _text("fabric/notebooks/05_baseline_forecasting.py")
 
-    assert 'HORIZON_STEPS = 1' in notebook
-    assert 'FEATURE_TIMESTAMP_COLUMN = "feature_timestamp_utc"' in notebook
+    assert 'SUPPORTED_HORIZON_MINUTES = (30, 60)' in notebook
+    assert 'HORIZON_MINUTES = "30,60"' in notebook
+    assert 'TARGET_TOLERANCE_MINUTES = 5' in notebook
+    assert 'MIN_TARGET_COVERAGE = 0.90' in notebook
+    assert 'REQUESTED_HORIZON_COLUMN = "requested_horizon_minutes"' in notebook
     assert 'TARGET_TIMESTAMP_COLUMN = "target_timestamp_utc"' in notebook
-    assert "F.lead(F.col(SOURCE_TIMESTAMP_COLUMN), horizon_steps)" in notebook
-    assert "F.lead(F.col(TARGET_COLUMN), horizon_steps)" in notebook
-    assert 'labelCol=SUPERVISED_TARGET_COLUMN' in notebook
-    assert '"demand_mw"' in notebook.split("FEATURE_COLUMNS = [", 1)[1].split(
-        "]", 1
-    )[0]
+    assert 'F.col("feature._ideal_target_epoch")' in notebook
+    assert 'F.col("feature._latest_target_epoch")' in notebook
+    assert ".asc_nulls_last()" in notebook
+    assert "F.lead(" not in notebook
     assert "randomSplit" not in notebook
+
+
+def test_fabric_backtest_enforces_target_coverage():
+    notebook = _text("fabric/notebooks/05_baseline_forecasting.py")
+
+    assert 'F.count(F.lit(1)).alias("eligible_target_count")' in notebook
+    assert "expected_combinations" in notebook
+    assert '.fillna({"eligible_target_count": 0, "matched_target_count": 0})' in notebook
+    assert 'alias("matched_target_count")' in notebook
+    assert '"target_coverage_pct"' in notebook
+    assert '"Forecast target coverage is below MIN_TARGET_COVERAGE: "' in notebook
+    assert "allow_one=True" in notebook
+    assert 'F.col("target_delay_minutes")' in notebook
 
 
 def test_fabric_backtest_purges_labels_not_known_at_feature_time():
@@ -39,33 +53,35 @@ def test_fabric_backtest_purges_labels_not_known_at_feature_time():
 
     assert "def _purge_training(" in notebook
     assert "F.col(TARGET_TIMESTAMP_COLUMN) < F.lit(evaluation_start)" in notebook
-    assert "F.col(FEATURE_TIMESTAMP_COLUMN) <= F.col(\"trained_through_utc\")" in notebook
-    assert 'model_name="persistence_lag_1"' in notebook
+    assert 'model_name="persistence_current_value"' in notebook
+    assert 'labelCol=SUPERVISED_TARGET_COLUMN' in notebook
     assert 'F.col(TARGET_COLUMN).cast("double")' in notebook
 
 
-def test_fabric_backtest_persists_horizon_evidence():
+def test_fabric_backtest_persists_time_horizon_evidence():
     notebook = _text("fabric/notebooks/05_baseline_forecasting.py")
 
     assert 'PREDICTIONS_TABLE = "forecast_baseline_predictions"' in notebook
     assert 'METRICS_TABLE = "forecast_baseline_metrics"' in notebook
-    assert 'F.col(FEATURE_TIMESTAMP_COLUMN)' in notebook
-    assert 'F.col(TARGET_TIMESTAMP_COLUMN).alias(SOURCE_TIMESTAMP_COLUMN)' in notebook
-    assert 'F.lit(horizon_steps).cast("int").alias("horizon_steps")' in notebook
-    assert 'F.col("horizon_minutes").cast("double")' in notebook
+    assert 'F.col(REQUESTED_HORIZON_COLUMN).cast("int")' in notebook
+    assert 'F.col(TARGET_TOLERANCE_COLUMN).cast("int")' in notebook
+    assert 'F.col("target_delay_minutes").cast("double")' in notebook
     assert 'F.lit(FEATURE_CONTRACT_VERSION)' in notebook
+    assert 'FEATURE_CONTRACT_VERSION = "time-horizon-v1"' in notebook
     assert '.mode("append")' in notebook
 
 
-def test_final_quality_gate_covers_training_and_horizon_boundaries():
+def test_final_quality_gate_covers_time_and_coverage_boundaries():
     checks = _text("fabric/notebooks/06_forecast_quality_checks.py")
 
-    assert '"check_name": "forecast_predictions_not_empty"' in checks
-    assert '"check_name": "forecast_metrics_not_empty"' in checks
     assert '"check_name": "forecast_prediction_training_boundary"' in checks
-    assert '"check_name": "forecast_prediction_horizon_valid"' in checks
-    assert 'F.col("feature_timestamp_utc") <= F.col("trained_through_utc")' in checks
-    assert 'F.col("event_timestamp_utc") <= F.col("feature_timestamp_utc")' in checks
+    assert '"check_name": "forecast_prediction_time_horizon_valid"' in checks
+    assert '"check_name": "forecast_target_coverage_valid"' in checks
+    assert '~F.col("requested_horizon_minutes").isin(*SUPPORTED_HORIZON_MINUTES)' in checks
+    assert 'F.col("target_delay_minutes")' in checks
+    assert 'F.col("target_tolerance_minutes")' in checks
+    assert 'F.col("target_coverage_pct")' in checks
+    assert 'F.col("minimum_target_coverage_pct")' in checks
 
 
 def test_sql_endpoint_forecast_views_are_pass_through_only():

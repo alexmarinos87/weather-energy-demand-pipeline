@@ -59,23 +59,22 @@ Set `SOURCE_AREA`, `WEATHER_CITY`, and `NATIONAL_GRID_RESOURCE_ID` as one valid 
 | `MIN_VALIDATION_ROWS` | `6` | Minimum validation target rows |
 | `MIN_TEST_ROWS` | `6` | Minimum test target rows |
 | `RIDGE_REG_PARAM` | `1.0` | L2 regularisation strength |
-| `HORIZON_STEPS` | `1` | Ordered observations between feature time and future target time |
+| `HORIZON_MINUTES` | `30,60` | Approved elapsed-time targets; only 30 and 60 are accepted |
+| `TARGET_TOLERANCE_MINUTES` | `5` | Maximum permitted target delay |
+| `MIN_TARGET_COVERAGE` | `0.90` | Minimum matched/eligible coverage per group and horizon |
 | `MAX_EXPECTED_DATA_LAG_HOURS` | `3` | Freshness warning threshold |
 
-## Future-horizon baseline forecasting
+## Bounded time-horizon forecasting
 
-`05_baseline_forecasting` creates one supervised row per causal feature timestamp. `HORIZON_STEPS` selects a later demand observation as the target. The prediction evidence records:
+`05_baseline_forecasting` cross-joins each causal feature row with the configured 30/60-minute horizons, then selects the first same-group demand observation at or after the ideal target time. A target is retained only when it is within `TARGET_TOLERANCE_MINUTES`.
 
-- `feature_timestamp_utc` — when the inputs were available;
-- `event_timestamp_utc` — the future demand target time;
-- `horizon_steps` and the observed `horizon_minutes`;
-- `current_demand_mw`, actual future demand, prediction, errors, and `trained_through_utc`.
+Trailing feature rows without enough retained future history are excluded from coverage. Missing targets within retained history remain eligible and lower coverage. Every source-area/resource/city and configured horizon must have eligible history and meet `MIN_TARGET_COVERAGE`; otherwise the run fails before model fitting.
 
-The persistence model uses demand at feature time. Spark ML ridge regression uses current/prior demand, prior rolling demand, causal weather, and calendar features.
+Prediction evidence records requested and actual elapsed horizon, observation distance, target delay, target coverage, feature/target timestamps, current and future demand, model output, errors, and the latest label used for fitting.
 
-Rows are split chronologically. Before each model fit, labels whose target timestamp is at or after the first evaluation feature timestamp are purged. Validation models therefore use labels known before validation feature time; test models use labels known before test feature time.
+Rows are split chronologically per source identity and horizon. Before each model fit, labels whose target timestamp is at or after the first evaluation feature timestamp are purged. Validation and test therefore use only labels that would have been known when evaluation features became available.
 
-Prediction and metric tables append by run ID. This preserves comparison evidence but requires a retention or compaction policy as history grows.
+Prediction and metric tables append by run ID. Define a retention or compaction policy before increasing schedule frequency or retained history.
 
 ## Deployment
 
@@ -84,9 +83,10 @@ Prediction and metric tables append by run ID. This preserves comparison evidenc
 3. Import the six notebooks and attach the Lakehouse.
 4. Configure secure credentials or connection-backed secret lookup.
 5. Create the Data Factory pipeline from the repository specification.
-6. Run ingestion, silver, gold, source/gold quality, future-horizon forecasting, and forecast quality once manually.
-7. Inspect horizon fields, prediction tables, metrics, and `dq_run_results`.
-8. Create SQL endpoint views only when stable analyst-facing names are useful.
-9. Enable the schedule after quota and capacity validation.
+6. Configure the source binding and time-horizon parameters.
+7. Run ingestion, silver, gold, source/gold quality, forecasting, and forecast quality once manually.
+8. Inspect requested horizon, actual delay, target coverage, model metrics, and `dq_run_results`.
+9. Create SQL endpoint views only when stable analyst-facing names are useful.
+10. Enable the schedule after quota and capacity validation.
 
-Spark Delta tables are canonical. SQL endpoint views are pass-through views, avoiding a second implementation of joins, feature windows, or evaluation logic.
+Spark Delta tables are canonical. SQL endpoint views are pass-through views, avoiding a second implementation of joins, feature windows, target matching, or model logic.
