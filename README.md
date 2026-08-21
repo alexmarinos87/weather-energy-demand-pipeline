@@ -14,9 +14,10 @@ This project implements a Microsoft Fabric medallion pipeline that:
 - propagates source-area and file-level provenance through silver tables;
 - joins only same-area weather at or before each demand timestamp;
 - builds causal lag, rolling, calendar, weather, and aggregation features;
-- creates explicit future demand targets and purges unavailable labels;
+- creates bounded 30- and 60-minute future demand targets;
+- purges training labels that would not yet be available at evaluation feature time;
 - evaluates persistence and regularised linear baselines with chronological train, validation, and test boundaries;
-- appends prediction and metric evidence to Delta tables; and
+- appends prediction, target-coverage, and metric evidence to Delta tables; and
 - records blocking and warning data-quality results in `dq_run_results`.
 
 The active cloud target is Microsoft Fabric: OneLake, Lakehouse Delta tables, Spark notebooks, Data Factory orchestration, the SQL analytics endpoint, and Power BI-ready outputs.
@@ -49,7 +50,8 @@ silver_weather + silver_energy
 gold_weather_demand_join
         ↓ prior-demand lags/rolling windows + causal weather/calendar features
 gold_feature_engineering
-        ↓ explicit future target + chronological split + label purge
+        ↓ 30/60-minute bounded target matching
+        ↓ chronological split + overlapping-label purge
 persistence_current_value + ridge_weather_lag
         ↓
 forecast_baseline_predictions + forecast_baseline_metrics
@@ -65,9 +67,28 @@ Every prediction must satisfy:
 trained_through_utc < feature_timestamp_utc < event_timestamp_utc
 ```
 
-## Credential-free time-horizon demo
+## Time-horizon target contract
 
-The local benchmark now evaluates the approved 30- and 60-minute service horizons in one run:
+The local and Fabric runtimes use the same matching rules for every source-area/resource/city group and requested horizon:
+
+1. Calculate the ideal target timestamp at feature time plus 30 or 60 minutes.
+2. Exclude trailing feature rows whose ideal target lies beyond the retained history.
+3. Choose the first source observation at or after the ideal target timestamp.
+4. Accept that target only when it is no more than `target_tolerance_minutes` late.
+5. Require matched/eligible coverage of at least `min_target_coverage` for every configured group and horizon.
+6. Fail the run when a configured group/horizon has no eligible history or insufficient in-history target coverage.
+
+Forecast evidence records:
+
+- `requested_horizon_minutes` — the 30- or 60-minute service target;
+- `target_tolerance_minutes` — maximum permitted late match;
+- `horizon_minutes` — actual elapsed time to the matched observation;
+- `target_delay_minutes` — delay beyond the requested horizon;
+- `horizon_steps` — actual ordered-observation distance, retained for diagnostics;
+- matched and eligible target counts plus target coverage;
+- feature time, future target time, current demand, actual future demand, predictions, errors, and training-label boundary.
+
+## Credential-free forecasting demo
 
 ```bash
 python3 -m pip install -r requirements.txt
@@ -79,18 +100,6 @@ python3 -m forecasting.run_baseline \
   --output-dir data/forecasting \
   --output-format csv
 ```
-
-For each feature timestamp, target selection chooses the first observation at or after the requested horizon. The observation must arrive within the configured tolerance. Trailing rows without enough future history are excluded from the coverage denominator; missing targets inside retained history reduce coverage and fail the run when the configured minimum is not met.
-
-Forecast evidence distinguishes:
-
-- `requested_horizon_minutes` — the 30- or 60-minute service target;
-- `target_tolerance_minutes` — maximum permitted late match;
-- `horizon_minutes` — actual elapsed time to the matched observation;
-- `target_delay_minutes` — delay beyond the requested horizon;
-- `horizon_steps` — actual ordered-observation distance, retained for diagnostics;
-- `feature_timestamp_utc` and `event_timestamp_utc` — feature and target times;
-- `trained_through_utc` — latest target label used for fitting.
 
 Outputs:
 
@@ -111,8 +120,6 @@ python3 -m forecasting.run_baseline \
   --output-dir data/forecasting \
   --output-format parquet
 ```
-
-The local implementation is time-based. The current Fabric notebook still uses `HORIZON_STEPS`; a dependent parity increment replaces that parameter with the same bounded 30/60-minute matching contract.
 
 ## Local ingestion development
 
@@ -148,10 +155,11 @@ Energy ingestion requests CKAN pages in ascending `_id` order until the total re
 3. Import notebook sources `01` through `06` from `fabric/notebooks/`.
 4. Create `weather_energy_demand_pipeline` from `fabric/pipelines/weather_energy_demand_pipeline.md`.
 5. Supply secure credentials and a consistent `SOURCE_AREA`, `WEATHER_CITY`, and `NATIONAL_GRID_RESOURCE_ID`.
-6. Run ingestion, silver, gold, source/gold quality, forecasting, and forecast quality in order.
-7. Optionally create pass-through SQL views from `fabric/sql/gold_views_tsql.sql` and `fabric/sql/forecast_views_tsql.sql`.
-8. Enable the schedule only after source quotas and Fabric capacity are confirmed.
+6. Configure `HORIZON_MINUTES`, `TARGET_TOLERANCE_MINUTES`, and `MIN_TARGET_COVERAGE`.
+7. Run ingestion, silver, gold, source/gold quality, forecasting, and forecast quality in order.
+8. Optionally create pass-through SQL views from `fabric/sql/gold_views_tsql.sql` and `fabric/sql/forecast_views_tsql.sql`.
+9. Enable the schedule only after source quotas and Fabric capacity are confirmed.
 
 ## Forecasting boundary
 
-The local benchmark now creates explicit 30- and 60-minute targets and handles missing or irregular intervals through bounded matching and coverage evidence. It still uses observed weather at feature time. A production forward forecast additionally requires forecast-weather inputs, rolling-origin evaluation, drift monitoring, and a model promotion process.
+The benchmark creates explicit 30- and 60-minute targets, handles missing or irregular intervals through bounded matching, and prevents overlapping-label leakage. It still uses weather observed at feature time. A production forward forecast additionally requires forecast-weather inputs, rolling-origin evaluation, drift monitoring, and a model promotion process.
