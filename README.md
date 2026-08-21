@@ -14,6 +14,7 @@ This project implements a Microsoft Fabric medallion pipeline that:
 - propagates source-area and file-level provenance through silver tables;
 - joins only same-area weather at or before each demand timestamp;
 - builds causal lag, rolling, calendar, weather, and aggregation features;
+- defines a versioned local contract for target-valid forecast weather;
 - creates bounded 30- and 60-minute future demand targets;
 - purges training labels that would not yet be available at evaluation feature time;
 - supports both a fixed chronological holdout and optional rolling-origin backtesting;
@@ -26,6 +27,7 @@ The active cloud target is Microsoft Fabric: OneLake, Lakehouse Delta tables, Sp
 ## Data sources and spatial contract
 
 - **OpenWeather API** — current weather observations.
+- **Normalized forecast-weather input** — a provider-neutral local contract; no live forecast adapter is implemented yet.
 - **National Grid Electricity Distribution Connected Data Portal** — near-real-time demand, generation, and import data split by licence area.
 
 `data-contracts/source_areas.json` defines the allowed bindings:
@@ -101,6 +103,33 @@ Forecast evidence records:
 - `horizon_steps` — actual ordered-observation distance, retained for diagnostics;
 - matched and eligible target counts plus target coverage;
 - feature time, future target time, current demand, actual future demand, predictions, errors, and training-label boundary.
+
+## Target-valid forecast-weather contract
+
+`data-contracts/forecast_weather_schema.json` and `forecasting/forecast_weather.py` define a provider-neutral local contract for weather predictions that are valid near a future demand target. The contract separates:
+
+- provider issue time;
+- pipeline ingestion/availability time;
+- forecast valid time; and
+- future demand target time.
+
+The matcher requires same-area/city identity and enforces:
+
+```text
+forecast_issued_at_utc
+    <=
+forecast_ingested_at_utc
+    <=
+feature_timestamp_utc
+    <
+target_timestamp_utc
+```
+
+Forecast valid time must be after feature time and within a configured tolerance of the demand target. The closest target-valid record wins; ties use the latest available issuance. Coverage is enforced independently per source-area/resource/city/horizon group, so missing forecast weather cannot be hidden by silently dropping rows.
+
+Matched evidence retains provider/model identity, issue/ingestion/valid timestamps, target-valid temperature and humidity, valid-time difference, lead times, availability age, and coverage. See `FORECAST_WEATHER.md` for the complete contract and credential-free Python example.
+
+This contract is not yet wired into the baseline models or Fabric notebooks. Existing model and cloud behaviour is unchanged.
 
 ## Evaluation modes
 
@@ -222,4 +251,4 @@ Energy ingestion requests CKAN pages in ascending `_id` order until the total re
 
 ## Forecasting boundary
 
-The benchmark creates explicit 30- and 60-minute targets, handles missing or irregular intervals through bounded matching, prevents overlapping-label leakage, and now provides local/Fabric rolling-origin parity. It still uses weather observed at feature time. A production forward forecast additionally requires forecast-weather inputs, drift monitoring, model registration, and a model promotion process.
+The benchmark creates explicit 30- and 60-minute targets, handles missing or irregular intervals through bounded matching, prevents overlapping-label leakage, and provides local/Fabric rolling-origin parity. A versioned local target-weather contract now exists, but the baseline models and Fabric notebooks still use weather observed at feature time. The next product step is local model integration against the normalized forecast-weather evidence, followed by Fabric parity, drift monitoring, model registration, and promotion controls.

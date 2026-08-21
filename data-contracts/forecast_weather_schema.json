@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "normalized_forecast_weather_v1",
+  "description": "Normalized weather forecast evidence with provider issue, pipeline availability, and forecast valid timestamps.",
+  "type": "object",
+  "required": [
+    "source_area",
+    "city",
+    "forecast_issued_at_utc",
+    "forecast_ingested_at_utc",
+    "forecast_valid_at_utc",
+    "forecast_temperature_c",
+    "forecast_humidity_pct",
+    "forecast_provider",
+    "forecast_model"
+  ],
+  "properties": {
+    "source_area": {"type": "string", "minLength": 1},
+    "city": {"type": "string", "minLength": 1},
+    "forecast_issued_at_utc": {"type": "string", "format": "date-time"},
+    "forecast_ingested_at_utc": {"type": "string", "format": "date-time"},
+    "forecast_valid_at_utc": {"type": "string", "format": "date-time"},
+    "forecast_temperature_c": {"type": "number"},
+    "forecast_humidity_pct": {"type": "number", "minimum": 0, "maximum": 100},
+    "forecast_provider": {"type": "string", "minLength": 1},
+    "forecast_model": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": true
+}
