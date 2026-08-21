@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "rolling_origin_evaluation_evidence_v1",
+  "description": "Additional evidence required for expanding-window demand backtests.",
+  "type": "object",
+  "required": [
+    "origin_fold",
+    "origin_count",
+    "origin_cutoff_utc",
+    "training_observation_count",
+    "evaluation_contract_version"
+  ],
+  "properties": {
+    "origin_fold": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "origin_count": {
+      "type": "integer",
+      "minimum": 2
+    },
+    "origin_cutoff_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "training_observation_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "evaluation_contract_version": {
+      "type": "string",
+      "const": "rolling-origin-v1"
+    }
+  },
+  "additionalProperties": true
+}

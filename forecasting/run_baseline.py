@@ -9,6 +9,7 @@ from forecasting.baseline import (
     BacktestConfig,
     build_demo_feature_frame,
     run_chronological_backtest,
+    run_rolling_origin_backtest,
 )
 
 
@@ -34,7 +35,10 @@ def _write_frame(frame: pd.DataFrame, path: Path, output_format: str) -> Path:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run purged 30/60-minute persistence and ridge demand baselines."
+        description=(
+            "Run purged 30/60-minute persistence and ridge demand baselines "
+            "with a fixed holdout or rolling-origin evaluation."
+        )
     )
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--input", type=Path, help="Gold feature CSV or Parquet.")
@@ -46,6 +50,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", type=Path, default=Path("data/forecasting"))
     parser.add_argument(
         "--output-format", choices=("csv", "parquet"), default="csv"
+    )
+    parser.add_argument(
+        "--evaluation-mode",
+        choices=("holdout", "rolling-origin"),
+        default="holdout",
+        help=(
+            "Keep the existing validation/test holdout by default, or explicitly "
+            "run repeated expanding-window historical cutoffs."
+        ),
     )
     parser.add_argument("--ridge-alpha", type=float, default=1.0)
     parser.add_argument(
@@ -60,13 +73,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--target-tolerance-minutes",
         type=int,
         default=5,
-        help="Maximum allowed delay for the first observation at or after the target.",
+        help="Maximum allowed delay for the first observation at or after target time.",
     )
     parser.add_argument(
         "--min-target-coverage",
         type=float,
         default=0.90,
-        help="Minimum matched/eligible target coverage required per group and horizon.",
+        help="Minimum matched/eligible target coverage per group and horizon.",
+    )
+    parser.add_argument(
+        "--rolling-origin-folds",
+        type=int,
+        default=3,
+        help=(
+            "Total expanding-window origins when --evaluation-mode rolling-origin "
+            "is selected. All but the final origin evaluate validation history; "
+            "the final origin evaluates the untouched test window."
+        ),
     )
     return parser
 
@@ -74,37 +97,55 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     frame = build_demo_feature_frame() if args.demo else _read_frame(args.input)
-    predictions, metrics = run_chronological_backtest(
-        frame,
-        config=BacktestConfig(
-            ridge_alpha=args.ridge_alpha,
-            horizon_minutes=tuple(args.horizon_minutes),
-            target_tolerance_minutes=args.target_tolerance_minutes,
-            min_target_coverage=args.min_target_coverage,
-        ),
+    config = BacktestConfig(
+        ridge_alpha=args.ridge_alpha,
+        horizon_minutes=tuple(args.horizon_minutes),
+        target_tolerance_minutes=args.target_tolerance_minutes,
+        min_target_coverage=args.min_target_coverage,
     )
+
+    if args.evaluation_mode == "rolling-origin":
+        predictions, metrics = run_rolling_origin_backtest(
+            frame,
+            config=config,
+            origin_count=args.rolling_origin_folds,
+        )
+        output_prefix = "rolling_origin"
+    else:
+        predictions, metrics = run_chronological_backtest(frame, config=config)
+        output_prefix = "baseline"
+
     predictions_path = _write_frame(
-        predictions, args.output_dir / "baseline_predictions", args.output_format
+        predictions,
+        args.output_dir / f"{output_prefix}_predictions",
+        args.output_format,
     )
     metrics_path = _write_frame(
-        metrics, args.output_dir / "baseline_metrics", args.output_format
+        metrics,
+        args.output_dir / f"{output_prefix}_metrics",
+        args.output_format,
     )
     print(f"Wrote predictions: {predictions_path}")
     print(f"Wrote metrics: {metrics_path}")
-    print(
-        metrics[
-            [
-                "source_area",
-                "requested_horizon_minutes",
-                "split",
-                "model_name",
-                "observation_count",
-                "target_coverage_pct",
-                "mae_mw",
-                "rmse_mw",
-            ]
-        ].to_string(index=False)
-    )
+
+    summary_columns = [
+        "source_area",
+        "requested_horizon_minutes",
+        "split",
+        "model_name",
+        "observation_count",
+        "target_coverage_pct",
+        "mae_mw",
+        "rmse_mw",
+    ]
+    if "origin_fold" in metrics.columns:
+        insertion_index = summary_columns.index("split")
+        summary_columns[insertion_index:insertion_index] = [
+            "origin_fold",
+            "origin_count",
+            "training_observation_count",
+        ]
+    print(metrics[summary_columns].to_string(index=False))
     return 0
 
 
