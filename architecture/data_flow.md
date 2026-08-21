@@ -22,7 +22,8 @@ gold_weather_demand_join
 gold_feature_engineering ----------------> gold_demand_aggregation
        |
        | bounded 30/60-minute target matching
-       | chronological split + unavailable-label purge
+       | fixed holdout OR expanding rolling origins
+       | unavailable-label purge at every cutoff
        | persistence and ridge baselines
        v
 forecast_baseline_predictions + forecast_baseline_metrics
@@ -53,20 +54,52 @@ Within each source-area/resource/city group:
 4. The target is the first same-group observation at or after the ideal time.
 5. The match is retained only when delay is within `TARGET_TOLERANCE_MINUTES`.
 6. Every configured source group and horizon must have eligible history and meet `MIN_TARGET_COVERAGE`.
-7. Matched rows are split chronologically into training, validation, and test.
-8. Before validation and test fitting, labels whose target time is not earlier than the first evaluation feature time are purged.
-9. Every prediction must satisfy `trained_through_utc < feature_timestamp_utc < event_timestamp_utc`.
+7. Before every model fit, labels whose target time is not earlier than the evaluation cutoff are purged.
+8. Every prediction must satisfy `trained_through_utc < feature_timestamp_utc < event_timestamp_utc`.
 
 This separates service horizon from source cadence. `requested_horizon_minutes` expresses the product requirement; `horizon_minutes` and `target_delay_minutes` expose the source observation actually used; `horizon_steps` remains diagnostic only.
 
 The persistence forecast uses current demand for the future target. Ridge regression may use current demand because it is known at feature time, together with prior demand, rolling demand, weather, and calendar inputs.
 
+## Evaluation contracts
+
+`EVALUATION_MODE=holdout` preserves the existing 60/20/20 chronological split:
+
+```text
+training → validation → untouched test
+```
+
+`EVALUATION_MODE=rolling-origin` keeps the same first 60% as initial history, partitions the validation 20% across `ROLLING_ORIGIN_FOLDS - 1` sequential validation origins, then evaluates the final 20% once as the untouched final origin.
+
+For every source identity, horizon, and model, rolling-origin evidence must contain:
+
+- folds `1..origin_count`;
+- strictly increasing `origin_cutoff_utc`;
+- non-decreasing `training_observation_count`;
+- `split=validation` for all non-final folds;
+- `split=test` for the final fold; and
+- no feature timestamp evaluated in more than one origin.
+
+Every rolling-origin prediction satisfies:
+
+```text
+trained_through_utc
+    <
+origin_cutoff_utc
+    <=
+feature_timestamp_utc
+    <
+event_timestamp_utc
+```
+
+Holdout rows use `evaluation_contract_version=fixed-holdout-v1` and null origin fields. Rolling rows use `evaluation_contract_version=rolling-origin-v1` and complete origin evidence. Both modes append to the same canonical Delta tables with schema evolution.
+
 ## Canonical implementation
 
-Spark Delta tables are canonical. The SQL analytics endpoint exposes pass-through views and does not reimplement joins, feature windows, target matching, or model logic in T-SQL.
+Spark Delta tables are canonical. The SQL analytics endpoint exposes pass-through views and does not reimplement joins, feature windows, target matching, origin construction, or model logic in T-SQL.
 
-The local pandas and Fabric Spark implementations use the same horizon, tolerance, coverage, and label-purge contract. Static parity tests prevent either path from reverting to observation-count targeting.
+The local pandas and Fabric Spark implementations now use the same time horizon, tolerance, target coverage, unavailable-label purge, fixed-holdout default, and optional rolling-origin contract. Static parity tests prevent either path from reverting to observation-count targeting or silently replacing the default evaluation mode.
 
 ## Scale boundary
 
-Silver and gold are currently rebuilt from immutable raw files. Forecasting enumerates the small set of source group/horizon combinations and appends run evidence. Replace full rebuilds, self-join target matching, and driver-side model enumeration with partition-aware Delta merge and distributed model orchestration when history, area count, or Fabric capacity makes this inappropriate.
+Silver and gold are currently rebuilt from immutable raw files. Forecasting enumerates the small set of source group/horizon combinations and fits both models once per evaluation origin. Replace full rebuilds, self-join target matching, driver-side group/origin enumeration, and repeated model fitting with partition-aware Delta merge and distributed model orchestration when history, area count, fold count, or Fabric capacity makes this inappropriate.

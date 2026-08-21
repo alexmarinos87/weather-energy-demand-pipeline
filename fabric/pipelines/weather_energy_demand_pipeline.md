@@ -18,12 +18,14 @@ Pipeline name: `weather_energy_demand_pipeline`
 | `TRAIN_FRACTION` | No | Default `0.60`. |
 | `VALIDATION_FRACTION` | No | Default `0.20`. |
 | `MIN_TRAIN_ROWS` | No | Default `24` after label-overlap purging. |
-| `MIN_VALIDATION_ROWS` | No | Default `6`. |
+| `MIN_VALIDATION_ROWS` | No | Default `6` for each validation origin. |
 | `MIN_TEST_ROWS` | No | Default `6`. |
 | `RIDGE_REG_PARAM` | No | Default `1.0`. |
 | `HORIZON_MINUTES` | No | Default `30,60`; only approved elapsed-time horizons are accepted. |
 | `TARGET_TOLERANCE_MINUTES` | No | Default `5`; maximum permitted late target match. |
 | `MIN_TARGET_COVERAGE` | No | Default `0.90`; required per source group and horizon. |
+| `EVALUATION_MODE` | No | Default `holdout`; accepted values are `holdout` and `rolling-origin`. |
+| `ROLLING_ORIGIN_FOLDS` | No | Default `3`; total origins when rolling mode is selected. |
 | `MAX_EXPECTED_DATA_LAG_HOURS` | No | Default `3`. |
 
 ## Activities
@@ -46,12 +48,14 @@ Pipeline name: `weather_energy_demand_pipeline`
    - Depend on source/gold quality success.
    - Build 30/60-minute targets by selecting the first same-group observation inside the configured late-match tolerance.
    - Exclude trailing rows without sufficient future history and enforce matched/eligible target coverage for every configured group/horizon.
-   - Split matched rows chronologically and purge training labels unavailable at evaluation feature time.
-   - Append prediction, delay, coverage, and model-metric evidence.
-   - Fail on unsupported horizons, insufficient eligible history, low target coverage, invalid predictions, duplicate timestamps, insufficient purged history, or label-availability leakage.
+   - Keep the fixed holdout by default, using the established chronological validation/test split.
+   - When `EVALUATION_MODE=rolling-origin`, partition validation history across `ROLLING_ORIGIN_FOLDS - 1` expanding origins and retain one untouched final test origin.
+   - Purge training labels unavailable at every validation, test, or rolling-origin cutoff.
+   - Append prediction, delay, coverage, evaluation-contract, origin, and model-metric evidence.
+   - Fail on unsupported horizons or modes, insufficient eligible history, low target coverage, invalid predictions, duplicate timestamps, insufficient purged history, reused evaluation timestamps, incomplete origin sequences, or label-availability leakage.
 6. `06_forecast_quality_checks`
    - Depend on forecasting success.
-   - Validate approved horizons, delay tolerance, target coverage, feature/target ordering, label boundaries, contract version, and metric windows for the newest run.
+   - Validate approved horizons, delay tolerance, target coverage, feature/target ordering, label boundaries, evaluation contract, origin sequence, contract version, and metric windows for the newest run.
    - Append results to `dq_run_results` and fail on blocking defects.
 
-Start hourly. Use two retries separated by at least five minutes. Do not enable a faster cadence until API quota, source latency, target coverage, forecast-run growth, and Fabric capacity have been observed.
+Start hourly with `EVALUATION_MODE=holdout`. Use two retries separated by at least five minutes. Run rolling-origin evaluation manually or at a lower reviewed cadence until fold duration, target coverage, forecast-table growth, and Fabric capacity have been observed.

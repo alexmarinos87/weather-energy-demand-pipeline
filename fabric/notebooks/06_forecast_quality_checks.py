@@ -1,16 +1,29 @@
 # Fabric notebook source: 06_forecast_quality_checks
-# Validates the newest 30/60-minute baseline run and records blocking evidence.
+# Validates the newest fixed-holdout or rolling-origin 30/60-minute run.
 
 from datetime import datetime, timezone
 
+from pyspark.sql import Window
 from pyspark.sql import functions as F
 
 
 PREDICTIONS_TABLE = "forecast_baseline_predictions"
 METRICS_TABLE = "forecast_baseline_metrics"
 RESULTS_TABLE = "dq_run_results"
+GROUP_COLUMNS = ["source_area", "resource_id", "city"]
+MODEL_GROUP_COLUMNS = [
+    *GROUP_COLUMNS,
+    "requested_horizon_minutes",
+    "model_name",
+]
 SUPPORTED_HORIZON_MINUTES = (30, 60)
 FEATURE_CONTRACT_VERSION = "time-horizon-v1"
+HOLDOUT_EVALUATION_CONTRACT_VERSION = "fixed-holdout-v1"
+ROLLING_ORIGIN_EVALUATION_CONTRACT_VERSION = "rolling-origin-v1"
+SUPPORTED_EVALUATION_CONTRACT_VERSIONS = (
+    HOLDOUT_EVALUATION_CONTRACT_VERSION,
+    ROLLING_ORIGIN_EVALUATION_CONTRACT_VERSION,
+)
 
 
 def _latest_run_id(spark_session) -> str:
@@ -25,10 +38,118 @@ def _latest_run_id(spark_session) -> str:
     return str(row["run_id"])
 
 
+def _rolling_origin_sequence_failures(predictions, metrics) -> int:
+    rolling_predictions = predictions.where(
+        F.col("evaluation_contract_version")
+        == ROLLING_ORIGIN_EVALUATION_CONTRACT_VERSION
+    )
+    rolling_metrics = metrics.where(
+        F.col("evaluation_contract_version")
+        == ROLLING_ORIGIN_EVALUATION_CONTRACT_VERSION
+    )
+    if rolling_predictions.limit(1).count() == 0:
+        return 0
+
+    groups = rolling_metrics.groupBy(*MODEL_GROUP_COLUMNS).agg(
+        F.countDistinct("origin_fold").alias("_fold_count"),
+        F.min("origin_fold").alias("_min_fold"),
+        F.max("origin_fold").alias("_max_fold"),
+        F.min("origin_count").alias("_min_origin_count"),
+        F.max("origin_count").alias("_max_origin_count"),
+    )
+    incomplete_groups = groups.where(
+        (F.col("_min_fold") != 1)
+        | (F.col("_max_fold") != F.col("_max_origin_count"))
+        | (F.col("_fold_count") != F.col("_max_origin_count"))
+        | (F.col("_min_origin_count") != F.col("_max_origin_count"))
+    ).count()
+
+    order = Window.partitionBy(*MODEL_GROUP_COLUMNS).orderBy("origin_fold")
+    ordered = (
+        rolling_metrics.withColumn(
+            "_previous_cutoff",
+            F.lag("origin_cutoff_utc").over(order),
+        )
+        .withColumn(
+            "_previous_training_count",
+            F.lag("training_observation_count").over(order),
+        )
+    )
+    ordering_failures = ordered.where(
+        (F.col("origin_fold") > 1)
+        & (
+            (F.col("origin_cutoff_utc") <= F.col("_previous_cutoff"))
+            | (
+                F.col("training_observation_count")
+                < F.col("_previous_training_count")
+            )
+        )
+    ).count()
+
+    reused_evaluations = (
+        rolling_predictions.groupBy(
+            *MODEL_GROUP_COLUMNS,
+            "feature_timestamp_utc",
+        )
+        .agg(F.countDistinct("origin_fold").alias("_origin_uses"))
+        .where(F.col("_origin_uses") > 1)
+        .count()
+    )
+    return int(incomplete_groups + ordering_failures + reused_evaluations)
+
+
 def run_checks(spark_session):
     run_id = _latest_run_id(spark_session)
-    predictions = spark_session.table(PREDICTIONS_TABLE).where(F.col("run_id") == run_id)
+    predictions = spark_session.table(PREDICTIONS_TABLE).where(
+        F.col("run_id") == run_id
+    )
     metrics = spark_session.table(METRICS_TABLE).where(F.col("run_id") == run_id)
+
+    holdout_prediction_failures = predictions.where(
+        (
+            F.col("evaluation_contract_version")
+            == HOLDOUT_EVALUATION_CONTRACT_VERSION
+        )
+        & (
+            F.col("origin_fold").isNotNull()
+            | F.col("origin_count").isNotNull()
+            | F.col("origin_cutoff_utc").isNotNull()
+            | F.col("training_observation_count").isNotNull()
+            | (~F.col("split").isin("validation", "test"))
+        )
+    ).count()
+    rolling_prediction_failures = predictions.where(
+        (
+            F.col("evaluation_contract_version")
+            == ROLLING_ORIGIN_EVALUATION_CONTRACT_VERSION
+        )
+        & (
+            F.col("origin_fold").isNull()
+            | F.col("origin_count").isNull()
+            | F.col("origin_cutoff_utc").isNull()
+            | F.col("training_observation_count").isNull()
+            | (F.col("origin_count") < 2)
+            | (F.col("origin_fold") < 1)
+            | (F.col("origin_fold") > F.col("origin_count"))
+            | (F.col("training_observation_count") <= 0)
+            | (F.col("trained_through_utc") >= F.col("origin_cutoff_utc"))
+            | (F.col("origin_cutoff_utc") > F.col("feature_timestamp_utc"))
+            | (
+                (F.col("origin_fold") < F.col("origin_count"))
+                & (F.col("split") != "validation")
+            )
+            | (
+                (F.col("origin_fold") == F.col("origin_count"))
+                & (F.col("split") != "test")
+            )
+        )
+    ).count()
+    unsupported_contract_failures = predictions.where(
+        ~F.col("evaluation_contract_version").isin(
+            *SUPPORTED_EVALUATION_CONTRACT_VERSIONS
+        )
+    ).count()
+
     checks = [
         {
             "check_name": "forecast_predictions_not_empty",
@@ -58,6 +179,7 @@ def run_checks(spark_session):
                 | F.col("predicted_demand_mw").isNull()
                 | F.col("trained_through_utc").isNull()
                 | F.col("feature_contract_version").isNull()
+                | F.col("evaluation_contract_version").isNull()
             ).count(),
         },
         {
@@ -70,10 +192,17 @@ def run_checks(spark_session):
             "check_name": "forecast_prediction_time_horizon_valid",
             "failed_rows": predictions.where(
                 (F.col("event_timestamp_utc") <= F.col("feature_timestamp_utc"))
-                | (~F.col("requested_horizon_minutes").isin(*SUPPORTED_HORIZON_MINUTES))
+                | (
+                    ~F.col("requested_horizon_minutes").isin(
+                        *SUPPORTED_HORIZON_MINUTES
+                    )
+                )
                 | (F.col("target_tolerance_minutes") < 0)
                 | (F.col("horizon_steps") < 1)
-                | (F.col("horizon_minutes") < F.col("requested_horizon_minutes"))
+                | (
+                    F.col("horizon_minutes")
+                    < F.col("requested_horizon_minutes")
+                )
                 | (F.col("target_delay_minutes") < 0)
                 | (
                     F.col("target_delay_minutes")
@@ -95,7 +224,10 @@ def run_checks(spark_session):
             "failed_rows": metrics.where(
                 (F.col("eligible_target_count") <= 0)
                 | (F.col("matched_target_count") <= 0)
-                | (F.col("matched_target_count") > F.col("eligible_target_count"))
+                | (
+                    F.col("matched_target_count")
+                    > F.col("eligible_target_count")
+                )
                 | (F.col("target_coverage_pct") < 0)
                 | (F.col("target_coverage_pct") > 100)
                 | (
@@ -109,10 +241,29 @@ def run_checks(spark_session):
             ).count(),
         },
         {
+            "check_name": "forecast_evaluation_contract_valid",
+            "failed_rows": int(
+                holdout_prediction_failures
+                + rolling_prediction_failures
+                + unsupported_contract_failures
+            ),
+        },
+        {
+            "check_name": "forecast_rolling_origin_sequence_valid",
+            "failed_rows": _rolling_origin_sequence_failures(
+                predictions,
+                metrics,
+            ),
+        },
+        {
             "check_name": "forecast_metrics_valid",
             "failed_rows": metrics.where(
                 (F.col("observation_count") <= 0)
-                | (~F.col("requested_horizon_minutes").isin(*SUPPORTED_HORIZON_MINUTES))
+                | (
+                    ~F.col("requested_horizon_minutes").isin(
+                        *SUPPORTED_HORIZON_MINUTES
+                    )
+                )
                 | (F.col("target_tolerance_minutes") < 0)
                 | (F.col("horizon_steps_avg") < 1)
                 | (
@@ -134,8 +285,16 @@ def run_checks(spark_session):
                     F.col("evaluation_start_utc")
                     <= F.col("evaluation_feature_start_utc")
                 )
-                | (F.col("evaluation_end_utc") < F.col("evaluation_start_utc"))
+                | (
+                    F.col("evaluation_end_utc")
+                    < F.col("evaluation_start_utc")
+                )
                 | (F.col("feature_contract_version") != FEATURE_CONTRACT_VERSION)
+                | (
+                    ~F.col("evaluation_contract_version").isin(
+                        *SUPPORTED_EVALUATION_CONTRACT_VERSIONS
+                    )
+                )
             ).count(),
         },
     ]

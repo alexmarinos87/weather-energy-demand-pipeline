@@ -16,8 +16,9 @@ This project implements a Microsoft Fabric medallion pipeline that:
 - builds causal lag, rolling, calendar, weather, and aggregation features;
 - creates bounded 30- and 60-minute future demand targets;
 - purges training labels that would not yet be available at evaluation feature time;
-- evaluates persistence and regularised linear baselines with chronological train, validation, and test boundaries;
-- appends prediction, target-coverage, and metric evidence to Delta tables; and
+- supports both a fixed chronological holdout and optional rolling-origin backtesting;
+- evaluates persistence and regularised linear baselines;
+- appends prediction, target-coverage, evaluation-origin, and metric evidence to Delta tables; and
 - records blocking and warning data-quality results in `dq_run_results`.
 
 The active cloud target is Microsoft Fabric: OneLake, Lakehouse Delta tables, Spark notebooks, Data Factory orchestration, the SQL analytics endpoint, and Power BI-ready outputs.
@@ -51,7 +52,8 @@ gold_weather_demand_join
         ↓ prior-demand lags/rolling windows + causal weather/calendar features
 gold_feature_engineering
         ↓ 30/60-minute bounded target matching
-        ↓ chronological split + overlapping-label purge
+        ↓ fixed holdout OR expanding rolling origins
+        ↓ unavailable-label purge at every evaluation cutoff
 persistence_current_value + ridge_weather_lag
         ↓
 forecast_baseline_predictions + forecast_baseline_metrics
@@ -65,6 +67,18 @@ Every prediction must satisfy:
 
 ```text
 trained_through_utc < feature_timestamp_utc < event_timestamp_utc
+```
+
+Rolling-origin predictions additionally satisfy:
+
+```text
+trained_through_utc
+    <
+origin_cutoff_utc
+    <=
+feature_timestamp_utc
+    <
+event_timestamp_utc
 ```
 
 ## Time-horizon target contract
@@ -88,7 +102,31 @@ Forecast evidence records:
 - matched and eligible target counts plus target coverage;
 - feature time, future target time, current demand, actual future demand, predictions, errors, and training-label boundary.
 
+## Evaluation modes
+
+The fixed holdout remains the default in both local and Fabric runtimes:
+
+```text
+earliest 60% → training
+next 20%     → validation
+final 20%    → test
+```
+
+Select rolling-origin evaluation explicitly to partition the validation history into repeated expanding-window origins while retaining the final 20% as one untouched test origin. Every origin independently purges labels that would not have been known at its cutoff.
+
+Rolling-origin evidence records:
+
+- `origin_fold`;
+- `origin_count`;
+- `origin_cutoff_utc`;
+- `training_observation_count`; and
+- `evaluation_contract_version=rolling-origin-v1`.
+
+The evaluator rejects incomplete fold sequences, reused evaluation timestamps, decreasing origin cutoffs, decreasing available training history, invalid validation/test fold placement, or labels unavailable at an origin cutoff.
+
 ## Credential-free forecasting demo
+
+Fixed holdout:
 
 ```bash
 python3 -m pip install -r requirements.txt
@@ -106,6 +144,25 @@ Outputs:
 - `data/forecasting/baseline_predictions.csv`
 - `data/forecasting/baseline_metrics.csv`
 
+Rolling-origin evaluation:
+
+```bash
+python3 -m forecasting.run_baseline \
+  --demo \
+  --evaluation-mode rolling-origin \
+  --rolling-origin-folds 3 \
+  --horizon-minutes 30 60 \
+  --target-tolerance-minutes 5 \
+  --min-target-coverage 0.90 \
+  --output-dir data/forecasting \
+  --output-format csv
+```
+
+Outputs:
+
+- `data/forecasting/rolling_origin_predictions.csv`
+- `data/forecasting/rolling_origin_metrics.csv`
+
 The demo compares:
 
 - `persistence_current_value` — demand at feature time carried forward;
@@ -116,6 +173,8 @@ For exported Fabric features, replace `--demo` with:
 ```bash
 python3 -m forecasting.run_baseline \
   --input gold_feature_engineering.parquet \
+  --evaluation-mode rolling-origin \
+  --rolling-origin-folds 3 \
   --horizon-minutes 30 60 \
   --output-dir data/forecasting \
   --output-format parquet
@@ -156,10 +215,11 @@ Energy ingestion requests CKAN pages in ascending `_id` order until the total re
 4. Create `weather_energy_demand_pipeline` from `fabric/pipelines/weather_energy_demand_pipeline.md`.
 5. Supply secure credentials and a consistent `SOURCE_AREA`, `WEATHER_CITY`, and `NATIONAL_GRID_RESOURCE_ID`.
 6. Configure `HORIZON_MINUTES`, `TARGET_TOLERANCE_MINUTES`, and `MIN_TARGET_COVERAGE`.
-7. Run ingestion, silver, gold, source/gold quality, forecasting, and forecast quality in order.
-8. Optionally create pass-through SQL views from `fabric/sql/gold_views_tsql.sql` and `fabric/sql/forecast_views_tsql.sql`.
-9. Enable the schedule only after source quotas and Fabric capacity are confirmed.
+7. Keep `EVALUATION_MODE=holdout` for ordinary hourly runs, or select `rolling-origin` with a reviewed `ROLLING_ORIGIN_FOLDS`.
+8. Run ingestion, silver, gold, source/gold quality, forecasting, and forecast quality in order.
+9. Optionally create pass-through SQL views from `fabric/sql/gold_views_tsql.sql` and `fabric/sql/forecast_views_tsql.sql`.
+10. Enable the schedule only after source quotas and Fabric capacity are confirmed.
 
 ## Forecasting boundary
 
-The benchmark creates explicit 30- and 60-minute targets, handles missing or irregular intervals through bounded matching, and prevents overlapping-label leakage. It still uses weather observed at feature time. A production forward forecast additionally requires forecast-weather inputs, rolling-origin evaluation, drift monitoring, and a model promotion process.
+The benchmark creates explicit 30- and 60-minute targets, handles missing or irregular intervals through bounded matching, prevents overlapping-label leakage, and now provides local/Fabric rolling-origin parity. It still uses weather observed at feature time. A production forward forecast additionally requires forecast-weather inputs, drift monitoring, model registration, and a model promotion process.
