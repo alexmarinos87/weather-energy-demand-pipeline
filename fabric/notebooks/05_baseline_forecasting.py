@@ -1,5 +1,5 @@
 # Fabric notebook source: 05_baseline_forecasting
-# Historical 30/60-minute demand backtesting with bounded target matching.
+# Historical 30/60-minute demand backtesting with fixed or rolling-origin evaluation.
 
 from datetime import datetime, timezone
 from typing import Any
@@ -26,6 +26,11 @@ FEATURE_TIMESTAMP_COLUMN = "feature_timestamp_utc"
 TARGET_TIMESTAMP_COLUMN = "target_timestamp_utc"
 TARGET_COLUMN = "demand_mw"
 SUPERVISED_TARGET_COLUMN = "target_demand_mw"
+ORIGIN_FOLD_COLUMN = "origin_fold"
+ORIGIN_COUNT_COLUMN = "origin_count"
+ORIGIN_CUTOFF_COLUMN = "origin_cutoff_utc"
+TRAINING_OBSERVATION_COUNT_COLUMN = "training_observation_count"
+EVALUATION_CONTRACT_VERSION_COLUMN = "evaluation_contract_version"
 FEATURE_COLUMNS = [
     "demand_mw",
     "demand_lag_1",
@@ -38,7 +43,10 @@ FEATURE_COLUMNS = [
     "weather_age_minutes",
 ]
 SUPPORTED_HORIZON_MINUTES = (30, 60)
+SUPPORTED_EVALUATION_MODES = ("holdout", "rolling-origin")
 FEATURE_CONTRACT_VERSION = "time-horizon-v1"
+HOLDOUT_EVALUATION_CONTRACT_VERSION = "fixed-holdout-v1"
+ROLLING_ORIGIN_EVALUATION_CONTRACT_VERSION = "rolling-origin-v1"
 
 TRAIN_FRACTION = 0.60
 VALIDATION_FRACTION = 0.20
@@ -49,6 +57,8 @@ RIDGE_REG_PARAM = 1.0
 HORIZON_MINUTES = "30,60"
 TARGET_TOLERANCE_MINUTES = 5
 MIN_TARGET_COVERAGE = 0.90
+EVALUATION_MODE = "holdout"
+ROLLING_ORIGIN_FOLDS = 3
 
 
 def _get_parameter(name: str, default: Any) -> Any:
@@ -91,6 +101,16 @@ def _horizons(value: Any) -> tuple[int, ...]:
     return horizons
 
 
+def _evaluation_mode(value: Any) -> str:
+    parsed = str(value).strip().lower()
+    if parsed not in SUPPORTED_EVALUATION_MODES:
+        supported = ", ".join(SUPPORTED_EVALUATION_MODES)
+        raise ValueError(
+            f"Unsupported EVALUATION_MODE={value!r}; supported values are {supported}."
+        )
+    return parsed
+
+
 def _configuration() -> dict[str, Any]:
     train_fraction = _fraction(
         _get_parameter("TRAIN_FRACTION", TRAIN_FRACTION), "TRAIN_FRACTION"
@@ -106,6 +126,18 @@ def _configuration() -> dict[str, Any]:
     ridge_reg_param = float(_get_parameter("RIDGE_REG_PARAM", RIDGE_REG_PARAM))
     if ridge_reg_param <= 0:
         raise ValueError("RIDGE_REG_PARAM must be positive.")
+    evaluation_mode = _evaluation_mode(
+        _get_parameter("EVALUATION_MODE", EVALUATION_MODE)
+    )
+    rolling_origin_folds = _integer(
+        _get_parameter("ROLLING_ORIGIN_FOLDS", ROLLING_ORIGIN_FOLDS),
+        "ROLLING_ORIGIN_FOLDS",
+        minimum=1,
+    )
+    if evaluation_mode == "rolling-origin" and rolling_origin_folds < 2:
+        raise ValueError(
+            "ROLLING_ORIGIN_FOLDS must be at least 2 in rolling-origin mode."
+        )
     return {
         "train_fraction": train_fraction,
         "validation_fraction": validation_fraction,
@@ -138,6 +170,8 @@ def _configuration() -> dict[str, Any]:
             "MIN_TARGET_COVERAGE",
             allow_one=True,
         ),
+        "evaluation_mode": evaluation_mode,
+        "rolling_origin_folds": rolling_origin_folds,
     }
 
 
@@ -348,6 +382,9 @@ def _prepare_features(config: dict[str, Any]) -> DataFrame:
             .otherwise(F.lit("test")),
         )
     )
+    minimum_validation_rows = config["min_validation_rows"]
+    if config["evaluation_mode"] == "rolling-origin":
+        minimum_validation_rows *= config["rolling_origin_folds"] - 1
     bad_splits = (
         prepared.groupBy(*MODEL_GROUP_COLUMNS)
         .agg(
@@ -363,7 +400,7 @@ def _prepare_features(config: dict[str, Any]) -> DataFrame:
         )
         .where(
             (F.col("train_rows") < F.lit(config["min_train_rows"]))
-            | (F.col("validation_rows") < F.lit(config["min_validation_rows"]))
+            | (F.col("validation_rows") < F.lit(minimum_validation_rows))
             | (F.col("test_rows") < F.lit(config["min_test_rows"]))
         )
         .collect()
@@ -376,7 +413,15 @@ def _prepare_features(config: dict[str, Any]) -> DataFrame:
             f"test={row['test_rows']}"
             for row in bad_splits[:5]
         )
-        raise ValueError(f"Forecast groups have insufficient history: {examples}.")
+        mode_detail = (
+            f", rolling_origins={config['rolling_origin_folds']}"
+            if config["evaluation_mode"] == "rolling-origin"
+            else ""
+        )
+        raise ValueError(
+            f"Forecast groups have insufficient history for "
+            f"{config['evaluation_mode']}{mode_detail}: {examples}."
+        )
     return prepared.persist(StorageLevel.MEMORY_AND_DISK)
 
 
@@ -421,7 +466,7 @@ def _purge_training(
     evaluation: DataFrame,
     *,
     min_train_rows: int,
-) -> tuple[DataFrame, datetime]:
+) -> tuple[DataFrame, datetime, int]:
     evaluation_start = evaluation.agg(F.min(FEATURE_TIMESTAMP_COLUMN)).first()[0]
     if evaluation_start is None:
         raise ValueError("Evaluation split has no rows.")
@@ -435,7 +480,8 @@ def _purge_training(
             "Purging overlapping time-horizon labels left "
             f"{row_count} training rows; minimum is {min_train_rows}."
         )
-    return purged, purged.agg(F.max(TARGET_TIMESTAMP_COLUMN)).first()[0]
+    trained_through = purged.agg(F.max(TARGET_TIMESTAMP_COLUMN)).first()[0]
+    return purged, trained_through, row_count
 
 
 def _decorate(
@@ -447,6 +493,11 @@ def _decorate(
     run_id: str,
     run_timestamp_utc: datetime,
     min_target_coverage: float,
+    evaluation_contract_version: str,
+    origin_fold: int | None = None,
+    origin_count: int | None = None,
+    origin_cutoff_utc: datetime | None = None,
+    training_observation_count: int | None = None,
 ) -> DataFrame:
     return frame.select(
         F.lit(run_id).alias("run_id"),
@@ -476,10 +527,19 @@ def _decorate(
         ).alias("squared_error_mw2"),
         F.lit(trained_through_utc).cast("timestamp").alias("trained_through_utc"),
         F.lit(FEATURE_CONTRACT_VERSION).alias("feature_contract_version"),
+        F.lit(origin_fold).cast("int").alias(ORIGIN_FOLD_COLUMN),
+        F.lit(origin_count).cast("int").alias(ORIGIN_COUNT_COLUMN),
+        F.lit(origin_cutoff_utc).cast("timestamp").alias(ORIGIN_CUTOFF_COLUMN),
+        F.lit(training_observation_count)
+        .cast("long")
+        .alias(TRAINING_OBSERVATION_COUNT_COLUMN),
+        F.lit(evaluation_contract_version).alias(
+            EVALUATION_CONTRACT_VERSION_COLUMN
+        ),
     )
 
 
-def _evaluate_group(
+def _evaluate_holdout_group(
     group_frame: DataFrame,
     config: dict[str, Any],
     *,
@@ -489,10 +549,10 @@ def _evaluate_group(
     train = group_frame.where(F.col("split") == "train")
     validation = group_frame.where(F.col("split") == "validation")
     test = group_frame.where(F.col("split") == "test")
-    validation_training, validation_boundary = _purge_training(
+    validation_training, validation_boundary, _ = _purge_training(
         train, validation, min_train_rows=config["min_train_rows"]
     )
-    test_training, test_boundary = _purge_training(
+    test_training, test_boundary, _ = _purge_training(
         train.unionByName(validation),
         test,
         min_train_rows=config["min_train_rows"],
@@ -505,6 +565,7 @@ def _evaluate_group(
         "run_id": run_id,
         "run_timestamp_utc": run_timestamp_utc,
         "min_target_coverage": config["min_target_coverage"],
+        "evaluation_contract_version": HOLDOUT_EVALUATION_CONTRACT_VERSION,
     }
     frames = [
         _decorate(
@@ -545,6 +606,173 @@ def _evaluate_group(
     return frames
 
 
+def _balanced_partition_sizes(total: int, parts: int) -> list[int]:
+    base, remainder = divmod(total, parts)
+    return [base + (1 if index < remainder else 0) for index in range(parts)]
+
+
+def _rolling_origin_folds(
+    group_frame: DataFrame,
+    config: dict[str, Any],
+) -> list[dict[str, Any]]:
+    metadata = group_frame.agg(
+        F.max("_group_count").alias("group_count"),
+        F.max("_train_end").alias("train_end"),
+        F.max("_validation_end").alias("validation_end"),
+    ).first()
+    group_count = int(metadata["group_count"])
+    train_end = int(metadata["train_end"])
+    validation_end = int(metadata["validation_end"])
+    origin_count = int(config["rolling_origin_folds"])
+    validation_origin_count = origin_count - 1
+    validation_count = validation_end - train_end
+    test_count = group_count - validation_end
+    required_validation_rows = (
+        validation_origin_count * int(config["min_validation_rows"])
+    )
+    if validation_count < required_validation_rows:
+        raise ValueError(
+            f"Group has {validation_count} validation rows; {origin_count} rolling "
+            f"origins require at least {required_validation_rows}."
+        )
+    if test_count < int(config["min_test_rows"]):
+        raise ValueError(
+            f"Group has {test_count} test rows; minimum is "
+            f"{config['min_test_rows']}."
+        )
+
+    folds: list[dict[str, Any]] = []
+    cursor = train_end
+    for origin_fold, window_size in enumerate(
+        _balanced_partition_sizes(validation_count, validation_origin_count),
+        start=1,
+    ):
+        evaluation_end = cursor + window_size
+        evaluation = group_frame.where(
+            (F.col("_row_number") > F.lit(cursor))
+            & (F.col("_row_number") <= F.lit(evaluation_end))
+        )
+        origin_cutoff = evaluation.agg(
+            F.min(FEATURE_TIMESTAMP_COLUMN)
+        ).first()[0]
+        if origin_cutoff is None:
+            raise ValueError("Rolling-origin validation window has no rows.")
+        folds.append(
+            {
+                "origin_fold": origin_fold,
+                "origin_count": origin_count,
+                "split": "validation",
+                "training_candidates": group_frame.where(
+                    F.col("_row_number") <= F.lit(cursor)
+                ),
+                "evaluation": evaluation,
+                "origin_cutoff_utc": origin_cutoff,
+            }
+        )
+        cursor = evaluation_end
+
+    test_evaluation = group_frame.where(
+        F.col("_row_number") > F.lit(validation_end)
+    )
+    test_cutoff = test_evaluation.agg(
+        F.min(FEATURE_TIMESTAMP_COLUMN)
+    ).first()[0]
+    if test_cutoff is None:
+        raise ValueError("Rolling-origin test window has no rows.")
+    folds.append(
+        {
+            "origin_fold": origin_count,
+            "origin_count": origin_count,
+            "split": "test",
+            "training_candidates": group_frame.where(
+                F.col("_row_number") <= F.lit(validation_end)
+            ),
+            "evaluation": test_evaluation,
+            "origin_cutoff_utc": test_cutoff,
+        }
+    )
+    cutoffs = [fold["origin_cutoff_utc"] for fold in folds]
+    if not all(earlier < later for earlier, later in zip(cutoffs, cutoffs[1:])):
+        raise ValueError("Rolling-origin cutoffs must be strictly increasing.")
+    return folds
+
+
+def _evaluate_rolling_group(
+    group_frame: DataFrame,
+    config: dict[str, Any],
+    *,
+    run_id: str,
+    run_timestamp_utc: datetime,
+) -> list[DataFrame]:
+    frames: list[DataFrame] = []
+    for fold in _rolling_origin_folds(group_frame, config):
+        training, trained_through, training_count = _purge_training(
+            fold["training_candidates"],
+            fold["evaluation"],
+            min_train_rows=config["min_train_rows"],
+        )
+        ridge = _fit_ridge(training, config["ridge_reg_param"]).transform(
+            fold["evaluation"]
+        )
+        common = {
+            "run_id": run_id,
+            "run_timestamp_utc": run_timestamp_utc,
+            "min_target_coverage": config["min_target_coverage"],
+            "evaluation_contract_version": (
+                ROLLING_ORIGIN_EVALUATION_CONTRACT_VERSION
+            ),
+            "origin_fold": int(fold["origin_fold"]),
+            "origin_count": int(fold["origin_count"]),
+            "origin_cutoff_utc": fold["origin_cutoff_utc"],
+            "training_observation_count": training_count,
+        }
+        frames.extend(
+            [
+                _decorate(
+                    fold["evaluation"].withColumn(
+                        "predicted_demand_mw",
+                        F.col(TARGET_COLUMN).cast("double"),
+                    ),
+                    split=str(fold["split"]),
+                    model_name="persistence_current_value",
+                    trained_through_utc=trained_through,
+                    **common,
+                ),
+                _decorate(
+                    ridge,
+                    split=str(fold["split"]),
+                    model_name="ridge_weather_lag",
+                    trained_through_utc=trained_through,
+                    **common,
+                ),
+            ]
+        )
+        training.unpersist()
+    return frames
+
+
+def _evaluate_group(
+    group_frame: DataFrame,
+    config: dict[str, Any],
+    *,
+    run_id: str,
+    run_timestamp_utc: datetime,
+) -> list[DataFrame]:
+    if config["evaluation_mode"] == "rolling-origin":
+        return _evaluate_rolling_group(
+            group_frame,
+            config,
+            run_id=run_id,
+            run_timestamp_utc=run_timestamp_utc,
+        )
+    return _evaluate_holdout_group(
+        group_frame,
+        config,
+        run_id=run_id,
+        run_timestamp_utc=run_timestamp_utc,
+    )
+
+
 def _union(frames: list[DataFrame]) -> DataFrame:
     if not frames:
         raise ValueError("No forecast groups produced predictions.")
@@ -566,6 +794,11 @@ def _build_metrics(predictions: DataFrame) -> DataFrame:
         "model_name",
         "trained_through_utc",
         "feature_contract_version",
+        ORIGIN_FOLD_COLUMN,
+        ORIGIN_COUNT_COLUMN,
+        ORIGIN_CUTOFF_COLUMN,
+        TRAINING_OBSERVATION_COUNT_COLUMN,
+        EVALUATION_CONTRACT_VERSION_COLUMN,
     ).agg(
         F.count(F.lit(1)).alias("observation_count"),
         F.first("eligible_target_count").alias("eligible_target_count"),
@@ -594,6 +827,76 @@ def _build_metrics(predictions: DataFrame) -> DataFrame:
     )
 
 
+def _rolling_origin_failures(
+    predictions: DataFrame,
+    metrics: DataFrame,
+) -> int:
+    rolling_predictions = predictions.where(
+        F.col(EVALUATION_CONTRACT_VERSION_COLUMN)
+        == F.lit(ROLLING_ORIGIN_EVALUATION_CONTRACT_VERSION)
+    )
+    rolling_metrics = metrics.where(
+        F.col(EVALUATION_CONTRACT_VERSION_COLUMN)
+        == F.lit(ROLLING_ORIGIN_EVALUATION_CONTRACT_VERSION)
+    )
+    if rolling_predictions.limit(1).count() == 0:
+        return 0
+
+    sequence = rolling_metrics.groupBy(
+        *MODEL_GROUP_COLUMNS,
+        "model_name",
+    ).agg(
+        F.countDistinct(ORIGIN_FOLD_COLUMN).alias("_fold_count"),
+        F.min(ORIGIN_FOLD_COLUMN).alias("_min_fold"),
+        F.max(ORIGIN_FOLD_COLUMN).alias("_max_fold"),
+        F.min(ORIGIN_COUNT_COLUMN).alias("_min_origin_count"),
+        F.max(ORIGIN_COUNT_COLUMN).alias("_max_origin_count"),
+    )
+    sequence_failures = sequence.where(
+        (F.col("_min_fold") != 1)
+        | (F.col("_max_fold") != F.col("_max_origin_count"))
+        | (F.col("_fold_count") != F.col("_max_origin_count"))
+        | (F.col("_min_origin_count") != F.col("_max_origin_count"))
+    ).count()
+
+    order = Window.partitionBy(
+        *MODEL_GROUP_COLUMNS,
+        "model_name",
+    ).orderBy(ORIGIN_FOLD_COLUMN)
+    ordered = (
+        rolling_metrics.withColumn(
+            "_previous_cutoff",
+            F.lag(ORIGIN_CUTOFF_COLUMN).over(order),
+        )
+        .withColumn(
+            "_previous_training_count",
+            F.lag(TRAINING_OBSERVATION_COUNT_COLUMN).over(order),
+        )
+    )
+    ordering_failures = ordered.where(
+        (F.col(ORIGIN_FOLD_COLUMN) > 1)
+        & (
+            (F.col(ORIGIN_CUTOFF_COLUMN) <= F.col("_previous_cutoff"))
+            | (
+                F.col(TRAINING_OBSERVATION_COUNT_COLUMN)
+                < F.col("_previous_training_count")
+            )
+        )
+    ).count()
+
+    reused_evaluations = (
+        rolling_predictions.groupBy(
+            *MODEL_GROUP_COLUMNS,
+            "model_name",
+            FEATURE_TIMESTAMP_COLUMN,
+        )
+        .agg(F.countDistinct(ORIGIN_FOLD_COLUMN).alias("_origin_uses"))
+        .where(F.col("_origin_uses") > 1)
+        .count()
+    )
+    return int(sequence_failures + ordering_failures + reused_evaluations)
+
+
 def run_backtest() -> tuple[DataFrame, DataFrame]:
     config = _configuration()
     run_id = str(uuid4())
@@ -616,6 +919,7 @@ def run_backtest() -> tuple[DataFrame, DataFrame]:
             )
         )
     predictions = _union(frames).persist(StorageLevel.MEMORY_AND_DISK)
+
     if predictions.where(
         F.col(FEATURE_TIMESTAMP_COLUMN) <= F.col("trained_through_utc")
     ).limit(1).count():
@@ -644,9 +948,62 @@ def run_backtest() -> tuple[DataFrame, DataFrame]:
         | F.col("predicted_demand_mw").isin(float("inf"), float("-inf"))
     ).limit(1).count():
         raise ValueError("Forecast predictions contain null or non-finite values.")
+
+    expected_contract = (
+        ROLLING_ORIGIN_EVALUATION_CONTRACT_VERSION
+        if config["evaluation_mode"] == "rolling-origin"
+        else HOLDOUT_EVALUATION_CONTRACT_VERSION
+    )
+    if predictions.where(
+        F.col(EVALUATION_CONTRACT_VERSION_COLUMN) != F.lit(expected_contract)
+    ).limit(1).count():
+        raise ValueError("Forecast evaluation contract does not match EVALUATION_MODE.")
+
+    holdout_invalid = predictions.where(
+        (F.col(EVALUATION_CONTRACT_VERSION_COLUMN) == HOLDOUT_EVALUATION_CONTRACT_VERSION)
+        & (
+            F.col(ORIGIN_FOLD_COLUMN).isNotNull()
+            | F.col(ORIGIN_COUNT_COLUMN).isNotNull()
+            | F.col(ORIGIN_CUTOFF_COLUMN).isNotNull()
+            | F.col(TRAINING_OBSERVATION_COUNT_COLUMN).isNotNull()
+            | (~F.col("split").isin("validation", "test"))
+        )
+    ).limit(1).count()
+    rolling_invalid = predictions.where(
+        (
+            F.col(EVALUATION_CONTRACT_VERSION_COLUMN)
+            == ROLLING_ORIGIN_EVALUATION_CONTRACT_VERSION
+        )
+        & (
+            F.col(ORIGIN_FOLD_COLUMN).isNull()
+            | F.col(ORIGIN_COUNT_COLUMN).isNull()
+            | F.col(ORIGIN_CUTOFF_COLUMN).isNull()
+            | F.col(TRAINING_OBSERVATION_COUNT_COLUMN).isNull()
+            | (F.col(ORIGIN_COUNT_COLUMN) < 2)
+            | (F.col(ORIGIN_FOLD_COLUMN) < 1)
+            | (F.col(ORIGIN_FOLD_COLUMN) > F.col(ORIGIN_COUNT_COLUMN))
+            | (F.col(TRAINING_OBSERVATION_COUNT_COLUMN) < config["min_train_rows"])
+            | (F.col("trained_through_utc") >= F.col(ORIGIN_CUTOFF_COLUMN))
+            | (F.col(ORIGIN_CUTOFF_COLUMN) > F.col(FEATURE_TIMESTAMP_COLUMN))
+            | (
+                (F.col(ORIGIN_FOLD_COLUMN) < F.col(ORIGIN_COUNT_COLUMN))
+                & (F.col("split") != "validation")
+            )
+            | (
+                (F.col(ORIGIN_FOLD_COLUMN) == F.col(ORIGIN_COUNT_COLUMN))
+                & (F.col("split") != "test")
+            )
+        )
+    ).limit(1).count()
+    if holdout_invalid or rolling_invalid:
+        raise ValueError("Forecast evaluation evidence is invalid.")
+
     metrics = _build_metrics(predictions)
     if metrics.limit(1).count() == 0:
         raise ValueError("No forecast metrics were produced.")
+    if _rolling_origin_failures(predictions, metrics):
+        raise ValueError("Rolling-origin sequence evidence is invalid.")
+
     predictions.write.format("delta").mode("append").option(
         "mergeSchema", "true"
     ).saveAsTable(PREDICTIONS_TABLE)
@@ -656,12 +1013,19 @@ def run_backtest() -> tuple[DataFrame, DataFrame]:
     predictions.orderBy(
         *GROUP_COLUMNS,
         REQUESTED_HORIZON_COLUMN,
+        EVALUATION_CONTRACT_VERSION_COLUMN,
+        ORIGIN_FOLD_COLUMN,
         "split",
         "model_name",
         SOURCE_TIMESTAMP_COLUMN,
     ).show(20, truncate=False)
     metrics.orderBy(
-        *GROUP_COLUMNS, REQUESTED_HORIZON_COLUMN, "split", "model_name"
+        *GROUP_COLUMNS,
+        REQUESTED_HORIZON_COLUMN,
+        EVALUATION_CONTRACT_VERSION_COLUMN,
+        ORIGIN_FOLD_COLUMN,
+        "split",
+        "model_name",
     ).show(truncate=False)
     prepared.unpersist()
     predictions.unpersist()
