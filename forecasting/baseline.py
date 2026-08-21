@@ -20,6 +20,10 @@ from forecasting.rolling_origin import (
     build_rolling_origin_folds,
     run_rolling_origin_backtest,
 )
+from forecasting.weather_comparison import (
+    prepare_weather_model_comparison,
+    run_weather_model_comparison,
+)
 
 __all__ = [
     "BacktestConfig",
@@ -34,6 +38,8 @@ __all__ = [
     "build_supervised_frame",
     "prepare_feature_frame",
     "prepare_forecast_weather_frame",
+    "prepare_weather_model_comparison",
     "run_chronological_backtest",
     "run_rolling_origin_backtest",
+    "run_weather_model_comparison",
 ]

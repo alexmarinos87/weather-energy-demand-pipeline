@@ -15,6 +15,7 @@ This project implements a Microsoft Fabric medallion pipeline that:
 - joins only same-area weather at or before each demand timestamp;
 - builds causal lag, rolling, calendar, weather, and aggregation features;
 - defines a versioned local contract for target-valid forecast weather;
+- compares observed-at-feature and target-valid-weather ridge models on paired rows;
 - creates bounded 30- and 60-minute future demand targets;
 - purges training labels that would not yet be available at evaluation feature time;
 - supports both a fixed chronological holdout and optional rolling-origin backtesting;
@@ -61,6 +62,18 @@ persistence_current_value + ridge_weather_lag
 forecast_baseline_predictions + forecast_baseline_metrics
         ↓
 SQL endpoint / Power BI / model comparison
+```
+
+The local forecast-weather comparison adds a separate, credential-free path:
+
+```text
+normalized target-valid weather
+        ↓ issue/ingestion/valid-time causal matching
+paired supervised demand rows
+        ↓ identical cutoffs and label purge
+ridge_weather_lag ↔ ridge_target_weather
+        ↓
+weather-comparison predictions and metrics
 ```
 
 For each demand observation, the gold join selects the latest weather observation from the same `source_area` whose timestamp is no later than demand time and no more than six hours old. Demand rolling features exclude the current row.
@@ -127,9 +140,14 @@ target_timestamp_utc
 
 Forecast valid time must be after feature time and within a configured tolerance of the demand target. The closest target-valid record wins; ties use the latest available issuance. Coverage is enforced independently per source-area/resource/city/horizon group, so missing forecast weather cannot be hidden by silently dropping rows.
 
-Matched evidence retains provider/model identity, issue/ingestion/valid timestamps, target-valid temperature and humidity, valid-time difference, lead times, availability age, and coverage. See `FORECAST_WEATHER.md` for the complete contract and credential-free Python example.
+`run_weather_model_comparison` then evaluates two ridge models on exactly the same target-weather-covered rows:
 
-This contract is not yet wired into the baseline models or Fabric notebooks. Existing model and cloud behaviour is unchanged.
+- `ridge_weather_lag` uses observed temperature, humidity, and weather age at feature time;
+- `ridge_target_weather` replaces those three fields with target-valid forecast temperature, humidity, and forecast availability age.
+
+All demand, lag, rolling, calendar, split, rolling-origin, target, and label-purge semantics are identical. The comparison fails if model cohorts or training boundaries diverge. Evidence is versioned as `weather-model-comparison-v1` and validated by `data-contracts/forecast_weather_model_comparison_schema.json`.
+
+See `FORECAST_WEATHER.md` for the complete contract and commands.
 
 ## Evaluation modes
 
@@ -155,10 +173,15 @@ The evaluator rejects incomplete fold sequences, reused evaluation timestamps, d
 
 ## Credential-free forecasting demo
 
-Fixed holdout:
+Install dependencies once:
 
 ```bash
 python3 -m pip install -r requirements.txt
+```
+
+Fixed baseline holdout:
+
+```bash
 python3 -m forecasting.run_baseline \
   --demo \
   --horizon-minutes 30 60 \
@@ -173,7 +196,7 @@ Outputs:
 - `data/forecasting/baseline_predictions.csv`
 - `data/forecasting/baseline_metrics.csv`
 
-Rolling-origin evaluation:
+Rolling-origin baseline:
 
 ```bash
 python3 -m forecasting.run_baseline \
@@ -181,8 +204,6 @@ python3 -m forecasting.run_baseline \
   --evaluation-mode rolling-origin \
   --rolling-origin-folds 3 \
   --horizon-minutes 30 60 \
-  --target-tolerance-minutes 5 \
-  --min-target-coverage 0.90 \
   --output-dir data/forecasting \
   --output-format csv
 ```
@@ -192,18 +213,38 @@ Outputs:
 - `data/forecasting/rolling_origin_predictions.csv`
 - `data/forecasting/rolling_origin_metrics.csv`
 
-The demo compares:
+Paired observed-versus-target-weather comparison:
 
-- `persistence_current_value` — demand at feature time carried forward;
-- `ridge_weather_lag` — regularised linear demand model using information available at feature time.
+```bash
+python3 -m forecasting.run_baseline \
+  --demo \
+  --model-set weather-comparison \
+  --horizon-minutes 30 60 \
+  --forecast-valid-time-tolerance-minutes 15 \
+  --forecast-max-availability-age-minutes 180 \
+  --min-forecast-weather-coverage 0.90 \
+  --output-dir data/forecasting \
+  --output-format csv
+```
 
-For exported Fabric features, replace `--demo` with:
+Outputs:
+
+- `data/forecasting/weather_comparison_predictions.csv`
+- `data/forecasting/weather_comparison_metrics.csv`
+
+Add `--evaluation-mode rolling-origin --rolling-origin-folds 3` to produce:
+
+- `data/forecasting/rolling_origin_weather_comparison_predictions.csv`
+- `data/forecasting/rolling_origin_weather_comparison_metrics.csv`
+
+For real local files, provide both inputs:
 
 ```bash
 python3 -m forecasting.run_baseline \
   --input gold_feature_engineering.parquet \
+  --forecast-weather-input normalized_forecast_weather.parquet \
+  --model-set weather-comparison \
   --evaluation-mode rolling-origin \
-  --rolling-origin-folds 3 \
   --horizon-minutes 30 60 \
   --output-dir data/forecasting \
   --output-format parquet
@@ -251,4 +292,4 @@ Energy ingestion requests CKAN pages in ascending `_id` order until the total re
 
 ## Forecasting boundary
 
-The benchmark creates explicit 30- and 60-minute targets, handles missing or irregular intervals through bounded matching, prevents overlapping-label leakage, and provides local/Fabric rolling-origin parity. A versioned local target-weather contract now exists, but the baseline models and Fabric notebooks still use weather observed at feature time. The next product step is local model integration against the normalized forecast-weather evidence, followed by Fabric parity, drift monitoring, model registration, and promotion controls.
+The repository now supports a leakage-safe local comparison between weather observed at feature time and normalized weather forecasts valid near the future demand target. The ordinary local baseline and Fabric notebooks remain unchanged and continue to use observed weather. A production forward forecast still requires a live provider adapter, forecast-weather raw/silver ingestion, forecast-versus-actual reconciliation, Fabric model parity, drift monitoring, model registration, and promotion controls.

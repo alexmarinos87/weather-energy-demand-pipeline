@@ -32,6 +32,21 @@ forecast_baseline_predictions + forecast_baseline_metrics
 SQL endpoint pass-through views / Power BI / model comparison
 ```
 
+The local target-weather experiment remains a separate pre-Fabric path:
+
+```text
+normalized forecast-weather evidence
+       | causal issue/ingestion/valid-time matching
+       v
+paired supervised demand rows
+       | identical holdout/rolling cutoffs and label purge
+       v
+ridge_weather_lag -------- ridge_target_weather
+       |
+       v
+local weather-comparison predictions + metrics
+```
+
 ## Source identity
 
 `data-contracts/source_areas.json` is the canonical project mapping between an NGED Live Data resource and a representative OpenWeather city. Ingestion writes the contract version, source-area key, display name, NGED resource ID, and weather proxy city into `_pipeline_metadata`.
@@ -61,9 +76,9 @@ This separates service horizon from source cadence. `requested_horizon_minutes` 
 
 The persistence forecast uses current demand for the future target. Ridge regression may use current demand because it is known at feature time, together with prior demand, rolling demand, weather, and calendar inputs.
 
-## Forecast-weather contract boundary
+## Forecast-weather contract and paired comparison
 
-The local `forecasting.forecast_weather` module defines a provider-neutral target-weather contract outside the current canonical Fabric path. Each normalized record separates provider issue time, pipeline ingestion time, and forecast valid time.
+The local `forecasting.forecast_weather` module defines a provider-neutral target-weather contract. Each normalized record separates provider issue time, pipeline ingestion time, and forecast valid time.
 
 For a supervised demand row, a forecast record may match only when it has the same `source_area` and `city` and satisfies:
 
@@ -79,9 +94,17 @@ target_timestamp_utc
 
 Forecast valid time must occur after feature time and within a bounded tolerance of the future demand target. Selection prioritizes the smallest valid-time difference, then the latest pipeline availability and provider issue times. Coverage is measured per source-area/resource/city/horizon group and the matcher fails below the configured minimum.
 
-The output retains issue/ingestion/valid timestamps, provider/model identity, target-valid temperature and humidity, valid-time difference, forecast lead, availability age, and coverage. This prevents future-issued forecasts or cross-area weather from entering a model feature set.
+`forecasting.weather_comparison` uses the target-weather-covered rows as one paired cohort. Both ridge models use identical demand, lag, rolling, calendar, target, split, rolling-origin, and label-purge contracts. The only feature substitution is:
 
-This is currently a local contract and matcher only. It is not yet part of the canonical Spark feature table, baseline model inputs, or Fabric Delta evidence.
+```text
+temperature                       -> target_weather_temperature_c
+humidity                          -> target_weather_humidity_pct
+weather_age_minutes               -> target_weather_availability_age_minutes
+```
+
+The comparison rejects divergent evaluation timestamps or training boundaries. Per-row evidence retains target-weather issue/ingestion/valid timestamps, provider/model identity, coverage, valid-time difference, feature lead, and availability age. `weather_feature_mode` records whether a prediction used `observed_at_feature` or `target_forecast` weather.
+
+This model comparison is local only. The canonical Spark feature table, Fabric models, and Delta evidence still use observed weather.
 
 ## Evaluation contracts
 
@@ -118,9 +141,9 @@ Holdout rows use `evaluation_contract_version=fixed-holdout-v1` and null origin 
 
 ## Canonical implementation
 
-Spark Delta tables are canonical. The SQL analytics endpoint exposes pass-through views and does not reimplement joins, feature windows, target matching, origin construction, or model logic in T-SQL.
+Spark Delta tables are canonical for the deployed Fabric path. The SQL analytics endpoint exposes pass-through views and does not reimplement joins, feature windows, target matching, origin construction, or model logic in T-SQL.
 
-The local pandas and Fabric Spark implementations use the same time horizon, tolerance, target coverage, unavailable-label purge, fixed-holdout default, and optional rolling-origin contract. Static parity tests prevent either path from reverting to observation-count targeting or silently replacing the default evaluation mode. The target-weather matcher is intentionally local-only until its model feature contract is validated.
+The local pandas and Fabric Spark implementations use the same time horizon, tolerance, target coverage, unavailable-label purge, fixed-holdout default, and optional rolling-origin contract. The target-weather model comparison deliberately remains outside the canonical Fabric path until local paired evidence justifies provider ingestion and Spark parity.
 
 ## Scale boundary
 
