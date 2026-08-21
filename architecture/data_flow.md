@@ -61,6 +61,28 @@ This separates service horizon from source cadence. `requested_horizon_minutes` 
 
 The persistence forecast uses current demand for the future target. Ridge regression may use current demand because it is known at feature time, together with prior demand, rolling demand, weather, and calendar inputs.
 
+## Forecast-weather contract boundary
+
+The local `forecasting.forecast_weather` module defines a provider-neutral target-weather contract outside the current canonical Fabric path. Each normalized record separates provider issue time, pipeline ingestion time, and forecast valid time.
+
+For a supervised demand row, a forecast record may match only when it has the same `source_area` and `city` and satisfies:
+
+```text
+forecast_issued_at_utc
+    <=
+forecast_ingested_at_utc
+    <=
+feature_timestamp_utc
+    <
+target_timestamp_utc
+```
+
+Forecast valid time must occur after feature time and within a bounded tolerance of the future demand target. Selection prioritizes the smallest valid-time difference, then the latest pipeline availability and provider issue times. Coverage is measured per source-area/resource/city/horizon group and the matcher fails below the configured minimum.
+
+The output retains issue/ingestion/valid timestamps, provider/model identity, target-valid temperature and humidity, valid-time difference, forecast lead, availability age, and coverage. This prevents future-issued forecasts or cross-area weather from entering a model feature set.
+
+This is currently a local contract and matcher only. It is not yet part of the canonical Spark feature table, baseline model inputs, or Fabric Delta evidence.
+
 ## Evaluation contracts
 
 `EVALUATION_MODE=holdout` preserves the existing 60/20/20 chronological split:
@@ -98,7 +120,7 @@ Holdout rows use `evaluation_contract_version=fixed-holdout-v1` and null origin 
 
 Spark Delta tables are canonical. The SQL analytics endpoint exposes pass-through views and does not reimplement joins, feature windows, target matching, origin construction, or model logic in T-SQL.
 
-The local pandas and Fabric Spark implementations now use the same time horizon, tolerance, target coverage, unavailable-label purge, fixed-holdout default, and optional rolling-origin contract. Static parity tests prevent either path from reverting to observation-count targeting or silently replacing the default evaluation mode.
+The local pandas and Fabric Spark implementations use the same time horizon, tolerance, target coverage, unavailable-label purge, fixed-holdout default, and optional rolling-origin contract. Static parity tests prevent either path from reverting to observation-count targeting or silently replacing the default evaluation mode. The target-weather matcher is intentionally local-only until its model feature contract is validated.
 
 ## Scale boundary
 
