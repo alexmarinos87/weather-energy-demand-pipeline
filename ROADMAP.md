@@ -1,12 +1,12 @@
 # Incremental product roadmap
 
-The repository is developed in dependency order. Each goal should be delivered as one bounded PR, validated on the latest `main`, and squash-merged only after CI and review checks pass.
+The repository is developed in dependency order. Each goal is one bounded PR, validated on the latest `main`, and squash-merged only after CI and review checks pass.
 
 | Goal | Outcome | Status after this increment |
 | --- | --- | --- |
 | G1 | Forecast-versus-observed reconciliation and lead-time quality evidence | Implemented |
-| G2 | Explicit target-weather promotion assessment using minimum evidence, weather quality, and paired demand-model improvement | Next |
-| G3 | Fabric bronze/silver ingestion parity for normalized forecast weather | Planned |
+| G2 | Human-review-only target-weather promotion assessment combining evidence volume, weather quality, and paired demand-model improvement | Implemented |
+| G3 | Fabric bronze/silver ingestion parity for normalized forecast weather | Next |
 | G4 | Fabric paired `ridge_weather_lag` versus `ridge_target_weather` execution and Delta evidence | Planned |
 | G5 | Forecast-provider drift, coverage, freshness, and reconciliation monitoring | Planned |
 | G6 | Reviewed model registration and promotion controls; no unattended promotion | Planned |
