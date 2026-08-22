@@ -8,7 +8,7 @@ The repository is developed in dependency order. Each goal is one bounded PR, va
 | G2 | Human-review-only target-weather promotion assessment combining evidence volume, weather quality, and paired demand-model improvement | Implemented |
 | G3 | Fabric bronze/silver ingestion parity for normalized forecast weather | Implemented as an optional manual subflow |
 | G4 | Fabric paired `ridge_weather_lag` versus `ridge_target_weather` execution and independent Delta evidence | Implemented as an optional manual subflow |
-| G5 | Forecast-provider freshness, snapshot cadence/completeness, reconciliation quality, and longitudinal drift monitoring | Implemented as advisory local evidence |
+| G5 | Forecast-provider drift, freshness, snapshot cadence/completeness, and reconciliation monitoring | Implemented as advisory local evidence |
 | G6 | Reviewed model registration and promotion controls; no unattended promotion | Next |
 | G7 | Retention, compaction, and cost controls for raw forecasts, reconciliation, predictions, and metrics | Planned |
 | G8 | GitHub `main` protection and required CI status checks | Repository setting required |

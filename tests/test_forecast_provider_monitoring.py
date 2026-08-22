@@ -34,7 +34,7 @@ def forecasts(
         BASE + pd.Timedelta(hours=6),
     ]
     rows = []
-    for snapshot_index, ingested in enumerate(ingestion_times):
+    for ingested in ingestion_times:
         for slot in range(1, slots_per_snapshot + 1):
             rows.append(
                 {
@@ -50,7 +50,9 @@ def forecasts(
                     "forecast_model": model,
                     "forecast_issue_basis": "retrieval_time_surrogate",
                     "forecast_provider_record_id": str(slot),
-                    "raw_snapshot_id": f"snapshot-{provider}-{snapshot_index}",
+                    "raw_snapshot_id": (
+                        f"snapshot-{provider}-{int(ingested.timestamp())}"
+                    ),
                 }
             )
     return pd.DataFrame(rows)
@@ -257,6 +259,9 @@ def test_multiple_provider_identities_are_monitored_independently():
 
 def test_naive_forecast_timestamps_are_rejected():
     evidence = forecasts()
+    evidence["forecast_ingested_at_utc"] = evidence[
+        "forecast_ingested_at_utc"
+    ].astype(object)
     evidence.loc[0, "forecast_ingested_at_utc"] = "2026-01-02T00:00:00"
     with pytest.raises(ForecastProviderMonitoringError, match="timezone-aware"):
         prepare_forecast_snapshot_evidence(evidence)
