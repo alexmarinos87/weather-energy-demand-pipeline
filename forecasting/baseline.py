@@ -15,6 +15,15 @@ from forecasting.forecast_weather import (
     build_demo_forecast_weather_frame,
     prepare_forecast_weather_frame,
 )
+from forecasting.model_registry import (
+    ModelCandidateRegistryError,
+    load_candidate_history,
+    register_candidate,
+    transition_candidate,
+    verify_candidate_history,
+    verify_manifest,
+    write_candidate_revision,
+)
 from forecasting.promotion_assessment import (
     TargetWeatherPromotionError,
     TargetWeatherPromotionPolicy,
@@ -55,6 +64,7 @@ __all__ = [
     "ForecastWeatherReconciliationConfig",
     "ForecastWeatherReconciliationError",
     "ForecastingContractError",
+    "ModelCandidateRegistryError",
     "RollingOriginFold",
     "TargetWeatherPromotionError",
     "TargetWeatherPromotionPolicy",
@@ -64,6 +74,7 @@ __all__ = [
     "build_demo_forecast_weather_frame",
     "build_rolling_origin_folds",
     "build_supervised_frame",
+    "load_candidate_history",
     "monitor_forecast_provider_health",
     "prepare_comparison_predictions",
     "prepare_feature_frame",
@@ -75,7 +86,12 @@ __all__ = [
     "prepare_reconciliation_metrics",
     "prepare_weather_model_comparison",
     "reconcile_forecast_weather",
+    "register_candidate",
     "run_chronological_backtest",
     "run_rolling_origin_backtest",
     "run_weather_model_comparison",
+    "transition_candidate",
+    "verify_candidate_history",
+    "verify_manifest",
+    "write_candidate_revision",
 ]

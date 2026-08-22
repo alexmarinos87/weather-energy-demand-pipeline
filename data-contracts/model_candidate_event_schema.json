@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "target_weather_model_candidate_event_v1",
+  "type": "object",
+  "required": [
+    "candidate_id",
+    "event_sequence",
+    "action",
+    "from_state",
+    "to_state",
+    "actor",
+    "reason",
+    "event_timestamp_utc",
+    "review_ticket",
+    "previous_event_hash",
+    "event_contract_version",
+    "event_hash"
+  ],
+  "properties": {
+    "candidate_id": {"type": "string", "pattern": "^twc-[0-9a-f]{24}$"},
+    "event_sequence": {"type": "integer", "minimum": 1},
+    "action": {
+      "enum": ["registered", "review_requested", "approved", "rejected", "retired"]
+    },
+    "from_state": {
+      "type": ["string", "null"],
+      "enum": [null, "draft", "review_requested", "approved", "rejected"]
+    },
+    "to_state": {
+      "enum": ["draft", "review_requested", "approved", "rejected", "retired"]
+    },
+    "actor": {"type": "string", "minLength": 1},
+    "reason": {"type": "string", "minLength": 1},
+    "event_timestamp_utc": {"type": "string", "format": "date-time"},
+    "review_ticket": {"type": ["string", "null"]},
+    "previous_event_hash": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "event_contract_version": {"const": "model-candidate-review-event-v1"},
+    "event_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "additionalProperties": false
+}
