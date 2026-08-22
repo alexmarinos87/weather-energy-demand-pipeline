@@ -14,20 +14,22 @@ The repository is developed in dependency order. Each goal is one bounded PR, va
 | G7b | Explicit reversible quarantine and hash-verified restore with no permanent deletion | Implemented |
 | G7c | Schema-compatible compacted shadow outputs with source-manifest verification and no source replacement | Implemented |
 | G8 | GitHub `main` protection and required CI status checks | Repository setting required |
-| G9 | End-to-end reproducible evidence bundle and recovery verification | Next |
+| G9 | Deterministic approved-candidate evidence bundle, safe archive verification, clean recovery, and recovery re-verification | Implemented |
+| G10 | Controlled live Fabric pilot with reviewed credentials, capacity boundary, rollback plan, and post-run evidence | Next |
 
 ## Dependency rules
 
-- Do not schedule or promote the forecast-weather path merely because ingestion, comparison, monitoring, candidate registration, or lifecycle support exists.
+- Do not schedule or promote the forecast-weather path merely because ingestion, comparison, monitoring, candidate registration, lifecycle, or recovery support exists.
 - Do not replace the observed-weather baseline; use it as the paired control.
-- Require reconciliation, promotion assessment, representative provider-health evidence, and an explicit reviewed candidate history before any controlled trial.
+- Require reconciliation, promotion assessment, representative provider-health evidence, an explicit reviewed candidate history, and a verified recovery bundle before any controlled trial.
 - An `approved` registry state is evidence approval only; it never authorizes deployment or changes the active model.
 - Lifecycle planning is non-mutating. Quarantine requires exact plan confirmation, current content-hash verification, named authority, and an immutable manifest.
 - Quarantine is reversible and cannot overwrite a source during restore. Permanent deletion remains unavailable.
 - A staged compacted output is a verified shadow copy only. Sources remain authoritative until a separate reviewed replacement workflow binds compaction verification to reversible source quarantine.
+- Recovery bundles must contain the complete approved candidate history and role-bound promotion, comparison, reconciliation, and provider-health evidence.
 - Unclassified evidence is retained by default, and protected candidate histories block lifecycle changes to referenced evidence.
 - Keep credentials outside the repository and prohibit live calls in CI.
-- Review quota, retention, capacity, and failure behaviour before enabling a recurring forecast trigger.
+- Review quota, retention, capacity, failure behaviour, and rollback before enabling a recurring forecast trigger.
 - Keep comparison predictions and metrics separate from the ordinary baseline tables.
 - Monitoring may report evidence but must not remediate, deploy, or promote automatically.
 

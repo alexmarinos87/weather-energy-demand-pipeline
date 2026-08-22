@@ -2,6 +2,7 @@
 
 from forecasting.baseline import (
     BacktestConfig,
+    EvidenceBundleError,
     EvidenceCompactionError,
     EvidenceLifecycleError,
     EvidenceQuarantineError,
@@ -22,6 +23,7 @@ from forecasting.baseline import (
     build_demo_forecast_weather_frame,
     build_rolling_origin_folds,
     build_supervised_frame,
+    create_evidence_bundle,
     inventory_evidence,
     load_candidate_history,
     load_compaction_manifest,
@@ -43,6 +45,7 @@ from forecasting.baseline import (
     prepare_weather_model_comparison,
     quarantine_evidence,
     reconcile_forecast_weather,
+    recover_evidence_bundle,
     register_candidate,
     restore_evidence,
     run_chronological_backtest,
@@ -51,14 +54,17 @@ from forecasting.baseline import (
     stage_compactions,
     transition_candidate,
     verify_candidate_history,
+    verify_evidence_bundle,
     verify_manifest,
     verify_quarantine_state,
+    verify_recovered_bundle,
     verify_staged_compaction,
     write_candidate_revision,
 )
 
 __all__ = [
     "BacktestConfig",
+    "EvidenceBundleError",
     "EvidenceCompactionError",
     "EvidenceLifecycleError",
     "EvidenceQuarantineError",
@@ -79,6 +85,7 @@ __all__ = [
     "build_demo_forecast_weather_frame",
     "build_rolling_origin_folds",
     "build_supervised_frame",
+    "create_evidence_bundle",
     "inventory_evidence",
     "load_candidate_history",
     "load_compaction_manifest",
@@ -100,6 +107,7 @@ __all__ = [
     "prepare_weather_model_comparison",
     "quarantine_evidence",
     "reconcile_forecast_weather",
+    "recover_evidence_bundle",
     "register_candidate",
     "restore_evidence",
     "run_chronological_backtest",
@@ -108,8 +116,10 @@ __all__ = [
     "stage_compactions",
     "transition_candidate",
     "verify_candidate_history",
+    "verify_evidence_bundle",
     "verify_manifest",
     "verify_quarantine_state",
+    "verify_recovered_bundle",
     "verify_staged_compaction",
     "write_candidate_revision",
 ]
