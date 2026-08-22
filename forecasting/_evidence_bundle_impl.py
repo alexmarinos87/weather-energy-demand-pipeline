@@ -1,68 +1,82 @@
 from __future__ import annotations
 
-import fnmatch
 import hashlib
+import io
 import json
+import re
+import shutil
+import tarfile
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 import pandas as pd
 
-from forecasting.model_registry import load_candidate_history
+from forecasting.model_registry import verify_candidate_history
 
 
-POLICY_CONTRACT_VERSION = "evidence-retention-policy-v1"
-INVENTORY_CONTRACT_VERSION = "evidence-inventory-v1"
-PLAN_CONTRACT_VERSION = "evidence-lifecycle-plan-v1"
-SUMMARY_CONTRACT_VERSION = "evidence-lifecycle-summary-v1"
-PLANNED_ACTIONS = {"retain", "compact_candidate", "quarantine_candidate"}
+BUNDLE_CONTRACT_VERSION = "candidate-evidence-bundle-v1"
+RECOVERY_CONTRACT_VERSION = "candidate-evidence-recovery-v1"
+REQUIRED_ROLES = {
+    "promotion_summary",
+    "comparison_predictions",
+    "reconciliation_metrics",
+    "provider_health_summary",
+}
+SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+BUNDLE_ID_PATTERN = re.compile(r"^ceb-[0-9a-f]{24}$")
 
 
-class EvidenceLifecycleError(ValueError):
-    """Raised when evidence inventory or lifecycle planning is unsafe."""
+class EvidenceBundleError(ValueError):
+    """Raised when candidate evidence cannot be bundled or recovered safely."""
 
 
-def _utc(value: Any, name: str) -> pd.Timestamp:
+def _text(value: Any, name: str) -> str:
+    if value is None:
+        raise EvidenceBundleError(f"{name} must be non-empty.")
+    text = str(value).strip()
+    if not text:
+        raise EvidenceBundleError(f"{name} must be non-empty.")
+    return text
+
+
+def _utc_iso(value: Any, name: str) -> str:
     try:
         timestamp = pd.Timestamp(value)
     except (TypeError, ValueError) as exc:
-        raise EvidenceLifecycleError(
+        raise EvidenceBundleError(
             f"{name} must be a valid timezone-aware timestamp."
         ) from exc
     if pd.isna(timestamp) or timestamp.tzinfo is None:
-        raise EvidenceLifecycleError(f"{name} must be timezone-aware.")
-    return timestamp.tz_convert("UTC")
+        raise EvidenceBundleError(f"{name} must be timezone-aware.")
+    return timestamp.tz_convert("UTC").isoformat()
 
 
-def _positive_or_zero_int(value: Any, name: str) -> int:
-    if isinstance(value, bool):
-        raise EvidenceLifecycleError(f"{name} must be a non-negative integer.")
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError) as exc:
-        raise EvidenceLifecycleError(
-            f"{name} must be a non-negative integer."
-        ) from exc
-    if parsed < 0:
-        raise EvidenceLifecycleError(f"{name} must be a non-negative integer.")
-    return parsed
-
-
-def _optional_positive_int(value: Any, name: str) -> int | None:
-    if value is None:
+def _canonical(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _canonical(value[key]) for key in sorted(value)}
+    if isinstance(value, (list, tuple)):
+        return [_canonical(item) for item in value]
+    if isinstance(value, (datetime, pd.Timestamp)):
+        return _utc_iso(value, "timestamp")
+    if pd.isna(value):
         return None
-    parsed = _positive_or_zero_int(value, name)
-    if parsed < 1:
-        raise EvidenceLifecycleError(f"{name} must be null or at least 1.")
-    return parsed
+    return value
 
 
-def _safe_relative_prefix(value: Any, name: str) -> str:
-    text = str(value).strip().replace("\\", "/")
-    if not text or text.startswith("/") or ".." in Path(text).parts:
-        raise EvidenceLifecycleError(f"{name} must be a safe relative prefix.")
-    return text
+def _digest(payload: dict[str, Any], *, exclude: tuple[str, ...] = ()) -> str:
+    material = {key: value for key, value in payload.items() if key not in exclude}
+    encoded = json.dumps(
+        _canonical(material),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
 def _sha256_file(path: Path) -> str:
@@ -73,418 +87,638 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _canonical_digest(value: Any) -> str:
-    encoded = json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
+def _safe_relative(value: Any, name: str) -> Path:
+    text = _text(value, name).replace("\\", "/")
+    path = Path(text)
+    if path.is_absolute() or text.startswith("/") or ".." in path.parts:
+        raise EvidenceBundleError(f"{name} must be a safe relative path.")
+    if any(part in {"", "."} for part in path.parts):
+        raise EvidenceBundleError(f"{name} must be a normalized relative path.")
+    return path
 
 
-def load_retention_policy(path: Path) -> dict[str, Any]:
-    """Load and validate the versioned dry-run retention policy."""
+def _safe_archive_path(value: Any, name: str = "archive_path") -> str:
+    text = _text(value, name)
+    if "\\" in text:
+        raise EvidenceBundleError(f"{name} must use forward slashes.")
+    path = PurePosixPath(text)
+    if path.is_absolute() or ".." in path.parts:
+        raise EvidenceBundleError(f"{name} must be a safe relative archive path.")
+    if any(part in {"", "."} for part in path.parts):
+        raise EvidenceBundleError(f"{name} must be normalized.")
+    return path.as_posix()
+
+
+def _root(path: Path, name: str) -> Path:
     path = Path(path)
-    raw = path.read_bytes()
-    policy = json.loads(raw.decode("utf-8"))
-    if policy.get("contract_version") != POLICY_CONTRACT_VERSION:
-        raise EvidenceLifecycleError(
-            f"Policy contract must be {POLICY_CONTRACT_VERSION}."
-        )
-    if policy.get("unclassified_action") != "retain":
-        raise EvidenceLifecycleError(
-            "Unclassified evidence must be retained by default."
-        )
-    states = policy.get("protected_candidate_states")
-    if not isinstance(states, list) or not states:
-        raise EvidenceLifecycleError(
-            "protected_candidate_states must be a non-empty list."
-        )
-    unsupported_states = sorted(
-        set(states) - {"draft", "review_requested", "approved", "rejected", "retired"}
+    if path.is_symlink():
+        raise EvidenceBundleError(f"{name} cannot be a symbolic link.")
+    resolved = path.resolve()
+    if not resolved.exists() or not resolved.is_dir():
+        raise EvidenceBundleError(f"{name} must be an existing directory.")
+    return resolved
+
+
+def _reject_symlink_components(root: Path, relative: Path, name: str) -> None:
+    current = root
+    for part in relative.parts:
+        current = current / part
+        if current.exists() and current.is_symlink():
+            raise EvidenceBundleError(
+                f"{name} contains a symbolic-link component: {current}."
+            )
+
+
+def _source_under(root: Path, path: Path, name: str) -> tuple[Path, Path]:
+    path = Path(path)
+    if path.is_absolute():
+        try:
+            relative = path.resolve().relative_to(root)
+        except ValueError as exc:
+            raise EvidenceBundleError(f"{name} is outside data_root: {path}.") from exc
+    else:
+        relative = _safe_relative(path, name)
+    _reject_symlink_components(root, relative, name)
+    try:
+        resolved = (root / relative).resolve(strict=True)
+    except FileNotFoundError as exc:
+        raise EvidenceBundleError(f"{name} does not exist: {relative}.") from exc
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise EvidenceBundleError(f"{name} escapes data_root: {relative}.") from exc
+    if resolved.is_symlink() or not resolved.is_file():
+        raise EvidenceBundleError(f"{name} must be a regular non-symlink file.")
+    return relative, resolved
+
+
+def _candidate_directory(root: Path, path: Path) -> tuple[Path, Path]:
+    path = Path(path)
+    if path.is_absolute():
+        try:
+            relative = path.resolve().relative_to(root)
+        except ValueError as exc:
+            raise EvidenceBundleError("candidate_dir must be inside data_root.") from exc
+    else:
+        relative = _safe_relative(path, "candidate_dir")
+    _reject_symlink_components(root, relative, "candidate_dir")
+    try:
+        resolved = (root / relative).resolve(strict=True)
+    except FileNotFoundError as exc:
+        raise EvidenceBundleError("candidate_dir does not exist.") from exc
+    if not resolved.is_dir() or resolved.is_symlink():
+        raise EvidenceBundleError("candidate_dir must be a non-symlink directory.")
+    return relative, resolved
+
+
+def _frame_from_bytes(name: str, data: bytes) -> pd.DataFrame:
+    suffix = Path(name).suffix.lower()
+    if suffix == ".csv":
+        return pd.read_csv(io.BytesIO(data))
+    if suffix in {".parquet", ".pq"}:
+        return pd.read_parquet(io.BytesIO(data))
+    if suffix == ".json":
+        payload = json.loads(data.decode("utf-8"))
+        return pd.DataFrame([payload] if isinstance(payload, dict) else payload)
+    raise EvidenceBundleError(
+        f"Evidence role file must be CSV, Parquet, or JSON: {name}."
     )
-    if unsupported_states:
-        raise EvidenceLifecycleError(
-            "Policy contains unsupported candidate states: "
-            + ", ".join(unsupported_states)
-            + "."
-        )
-    excluded = policy.get("excluded_prefixes", [])
-    if not isinstance(excluded, list):
-        raise EvidenceLifecycleError("excluded_prefixes must be a list.")
-    policy["excluded_prefixes"] = [
-        _safe_relative_prefix(value, "excluded_prefix") for value in excluded
-    ]
-    categories = policy.get("categories")
-    if not isinstance(categories, list) or not categories:
-        raise EvidenceLifecycleError("Policy must define at least one category.")
-    normalized_categories: list[dict[str, Any]] = []
-    seen_categories: set[str] = set()
-    for index, raw_category in enumerate(categories):
-        if not isinstance(raw_category, dict):
-            raise EvidenceLifecycleError(
-                f"Policy category {index} must be an object."
-            )
-        category = str(raw_category.get("category", "")).strip()
-        if not category or category in seen_categories:
-            raise EvidenceLifecycleError(
-                "Every policy category must have a unique non-empty name."
-            )
-        seen_categories.add(category)
-        patterns = raw_category.get("patterns")
-        if not isinstance(patterns, list) or not patterns:
-            raise EvidenceLifecycleError(
-                f"Category {category} must define at least one pattern."
-            )
-        normalized_patterns = [
-            _safe_relative_prefix(pattern, f"{category}.pattern")
-            for pattern in patterns
-        ]
-        retention_days = _optional_positive_int(
-            raw_category.get("retention_days"),
-            f"{category}.retention_days",
-        )
-        compact_after_days = _optional_positive_int(
-            raw_category.get("compact_after_days"),
-            f"{category}.compact_after_days",
-        )
-        if (
-            retention_days is not None
-            and compact_after_days is not None
-            and compact_after_days >= retention_days
-        ):
-            raise EvidenceLifecycleError(
-                f"{category}.compact_after_days must be below retention_days."
-            )
-        formats = raw_category.get("compaction_formats", [])
-        if not isinstance(formats, list):
-            raise EvidenceLifecycleError(
-                f"{category}.compaction_formats must be a list."
-            )
-        normalized_formats = sorted(
-            {
-                str(value).strip().lower()
-                for value in formats
-                if str(value).strip()
-            }
-        )
-        if any(not value.startswith(".") for value in normalized_formats):
-            raise EvidenceLifecycleError(
-                f"{category}.compaction_formats must use suffixes such as .parquet."
-            )
-        min_compaction_files = _positive_or_zero_int(
-            raw_category.get("min_compaction_files", 0),
-            f"{category}.min_compaction_files",
-        )
-        max_compaction_source_bytes = _positive_or_zero_int(
-            raw_category.get("max_compaction_source_bytes", 0),
-            f"{category}.max_compaction_source_bytes",
-        )
-        if compact_after_days is None:
-            if normalized_formats or min_compaction_files or max_compaction_source_bytes:
-                raise EvidenceLifecycleError(
-                    f"{category} cannot configure compaction without compact_after_days."
-                )
-        elif (
-            not normalized_formats
-            or min_compaction_files < 2
-            or max_compaction_source_bytes < 1
-        ):
-            raise EvidenceLifecycleError(
-                f"{category} compaction requires formats, at least two files, and a byte bound."
-            )
-        normalized_categories.append(
-            {
-                "category": category,
-                "patterns": normalized_patterns,
-                "retention_days": retention_days,
-                "min_keep_latest": _positive_or_zero_int(
-                    raw_category.get("min_keep_latest", 0),
-                    f"{category}.min_keep_latest",
-                ),
-                "compact_after_days": compact_after_days,
-                "compaction_formats": normalized_formats,
-                "min_compaction_files": min_compaction_files,
-                "max_compaction_source_bytes": max_compaction_source_bytes,
-                "always_protect": bool(raw_category.get("always_protect", False)),
-            }
-        )
-    policy["categories"] = normalized_categories
-    policy["policy_sha256"] = hashlib.sha256(raw).hexdigest()
-    return policy
 
 
-def _category_for(relative_path: str, policy: dict[str, Any]) -> dict[str, Any] | None:
-    for rule in policy["categories"]:
-        if any(fnmatch.fnmatchcase(relative_path, pattern) for pattern in rule["patterns"]):
-            return rule
-    return None
+def _unique_text(frame: pd.DataFrame, column: str, role: str) -> set[str]:
+    if column not in frame.columns:
+        raise EvidenceBundleError(f"{role} is missing {column}.")
+    values = {str(value).strip() for value in frame[column].dropna()}
+    if not values or "" in values:
+        raise EvidenceBundleError(f"{role}.{column} must be non-empty.")
+    return values
 
 
-def inventory_evidence(
-    data_root: Path,
-    policy: dict[str, Any],
-    *,
-    as_of_utc: Any | None = None,
-) -> pd.DataFrame:
-    """Build a content-hashed inventory without mutating any evidence file."""
-    root = Path(data_root).resolve()
-    if not root.exists() or not root.is_dir():
-        raise EvidenceLifecycleError(f"Data root is not a directory: {root}.")
-    as_of = _utc(as_of_utc or datetime.now(timezone.utc), "as_of_utc")
-    records: list[dict[str, Any]] = []
-    for path in sorted(root.rglob("*")):
-        if path.is_symlink():
-            raise EvidenceLifecycleError(
-                f"Evidence inventory refuses symbolic links: {path}."
-            )
-        if not path.is_file():
-            continue
-        relative = path.relative_to(root).as_posix()
-        if any(relative.startswith(prefix) for prefix in policy["excluded_prefixes"]):
-            continue
-        stat = path.stat()
-        modified = pd.Timestamp(stat.st_mtime, unit="s", tz="UTC")
-        if modified > as_of:
-            raise EvidenceLifecycleError(
-                f"Evidence file modification time is after as_of_utc: {relative}."
-            )
-        rule = _category_for(relative, policy)
-        classified = rule is not None
-        effective = rule or {
-            "category": "unclassified",
-            "retention_days": None,
-            "min_keep_latest": 0,
-            "compact_after_days": None,
-            "compaction_formats": [],
-            "min_compaction_files": 0,
-            "max_compaction_source_bytes": 0,
-            "always_protect": False,
+def _validate_role(role: str, name: str, data: bytes, candidate: dict[str, Any]) -> None:
+    frame = _frame_from_bytes(name, data)
+    if frame.empty:
+        raise EvidenceBundleError(f"{role} evidence must not be empty.")
+    if role == "promotion_summary":
+        expected = {
+            "assessment_id": candidate["promotion_assessment_id"],
+            "comparison_run_id": candidate["comparison_run_id"],
+            "reconciliation_run_id": candidate["reconciliation_run_id"],
         }
-        records.append(
-            {
-                "inventory_as_of_utc": as_of,
-                "relative_path": relative,
-                "parent_path": Path(relative).parent.as_posix(),
-                "file_name": path.name,
-                "suffix": path.suffix.lower(),
-                "category": effective["category"],
-                "classified": classified,
-                "size_bytes": int(stat.st_size),
-                "modified_at_utc": modified,
-                "age_days": float((as_of - modified).total_seconds() / 86400.0),
-                "sha256": _sha256_file(path),
-                "retention_days": effective["retention_days"],
-                "min_keep_latest": int(effective["min_keep_latest"]),
-                "compact_after_days": effective["compact_after_days"],
-                "compaction_formats": tuple(effective["compaction_formats"]),
-                "min_compaction_files": int(effective["min_compaction_files"]),
-                "max_compaction_source_bytes": int(
-                    effective["max_compaction_source_bytes"]
-                ),
-                "always_protect": bool(effective["always_protect"]),
-                "inventory_contract_version": INVENTORY_CONTRACT_VERSION,
-            }
-        )
-    if not records:
-        raise EvidenceLifecycleError("No evidence files were found below data_root.")
-    return pd.DataFrame(records).sort_values("relative_path").reset_index(drop=True)
+    elif role == "comparison_predictions":
+        expected = {"run_id": candidate["comparison_run_id"]}
+    elif role == "reconciliation_metrics":
+        expected = {"reconciliation_run_id": candidate["reconciliation_run_id"]}
+    elif role == "provider_health_summary":
+        expected = {"monitor_run_id": candidate["provider_health_monitor_run_id"]}
+    else:
+        raise EvidenceBundleError(f"Unsupported required evidence role: {role}.")
+    for column, value in expected.items():
+        values = _unique_text(frame, column, role)
+        if values != {str(value)}:
+            raise EvidenceBundleError(
+                f"{role}.{column} does not match the approved candidate."
+            )
 
 
-def load_protected_candidate_references(
-    data_root: Path, policy: dict[str, Any]
-) -> dict[str, str]:
-    """Collect evidence identifiers referenced by review-requested or approved candidates."""
-    registry_root = Path(data_root) / "model-registry"
-    if not registry_root.exists():
-        return {}
-    references: dict[str, str] = {}
-    protected_states = set(policy["protected_candidate_states"])
-    for candidate_directory in sorted(path for path in registry_root.iterdir() if path.is_dir()):
-        _, _, latest = load_candidate_history(candidate_directory)
-        if latest["candidate_state"] not in protected_states:
+def _candidate_history_from_payloads(
+    payloads: dict[str, bytes], candidate_id: str
+) -> dict[str, Any]:
+    prefix = f"candidate/{candidate_id}/"
+    manifests: list[dict[str, Any]] = []
+    events: list[dict[str, Any]] = []
+    for name, data in sorted(payloads.items()):
+        if not name.startswith(prefix):
             continue
-        reason = (
-            f"candidate={latest['candidate_id']} state={latest['candidate_state']}"
-        )
-        for key in (
-            "candidate_id",
-            "promotion_assessment_id",
-            "comparison_run_id",
-            "reconciliation_run_id",
-            "provider_health_monitor_run_id",
-            "code_commit_sha",
-            "code_tree_sha",
-        ):
-            value = str(latest.get(key, "")).strip()
-            if value:
-                references[value] = reason
-    return references
-
-
-def _matched_reference(relative_path: str, references: dict[str, str]) -> str | None:
-    for identifier in sorted(references, key=len, reverse=True):
-        if identifier in relative_path:
-            return references[identifier]
-    return None
-
-
-def plan_evidence_lifecycle(
-    inventory: pd.DataFrame,
-    policy: dict[str, Any],
-    *,
-    protected_references: dict[str, str] | None = None,
-    monthly_storage_cost_per_gib: float = 0.0,
-    plan_created_at_utc: Any | None = None,
-) -> tuple[pd.DataFrame, dict[str, Any]]:
-    """Create a non-mutating retention/compaction/quarantine recommendation."""
-    if inventory.empty:
-        raise EvidenceLifecycleError("Inventory must not be empty.")
-    cost = float(monthly_storage_cost_per_gib)
-    if not isfinite(cost := float(cost)) or cost < 0:
-        raise EvidenceLifecycleError(
-            "monthly_storage_cost_per_gib must be finite and non-negative."
-        )
-    created_at = _utc(
-        plan_created_at_utc or datetime.now(timezone.utc),
-        "plan_created_at_utc",
-    )
-    references = protected_references or {}
-    plan = inventory.copy()
-    plan["latest_rank"] = (
-        plan.sort_values(
-            ["category", "modified_at_utc", "relative_path"],
-            ascending=[True, False, False],
-        )
-        .groupby("category", sort=False)
-        .cumcount()
-        .add(1)
-        .reindex(plan.index)
-        .astype(int)
-    )
-    plan["candidate_protection_reason"] = plan["relative_path"].map(
-        lambda value: _matched_reference(value, references)
-    )
-    plan["protected_by_candidate"] = plan["candidate_protection_reason"].notna()
-
-    compaction_eligible = (
-        plan["compact_after_days"].notna()
-        & (plan["age_days"] > plan["compact_after_days"].fillna(float("inf")))
-        & plan.apply(
-            lambda row: row["suffix"] in set(row["compaction_formats"]), axis=1
-        )
-        & (plan["size_bytes"] <= plan["max_compaction_source_bytes"])
-    )
-    compaction_counts = (
-        plan.loc[compaction_eligible]
-        .groupby(["category", "parent_path"], dropna=False)
-        .size()
-        .to_dict()
-    )
-
-    actions: list[str] = []
-    reasons: list[str] = []
-    for index, row in plan.iterrows():
-        if row["always_protect"]:
-            action, reason = "retain", "category is configured as always protected"
-        elif row["protected_by_candidate"]:
-            action, reason = "retain", row["candidate_protection_reason"]
-        elif row["latest_rank"] <= row["min_keep_latest"]:
-            action, reason = (
-                "retain",
-                f"within latest {row['min_keep_latest']} files retained for category",
-            )
-        elif pd.notna(row["retention_days"]) and row["age_days"] > float(
-            row["retention_days"]
-        ):
-            action, reason = (
-                "quarantine_candidate",
-                f"age exceeds retention_days={int(row['retention_days'])}",
-            )
-        elif compaction_eligible.loc[index]:
-            group_count = compaction_counts.get(
-                (row["category"], row["parent_path"]), 0
-            )
-            if group_count >= row["min_compaction_files"]:
-                action, reason = (
-                    "compact_candidate",
-                    f"{group_count} small homogeneous files exceed compact_after_days",
-                )
-            else:
-                action, reason = (
-                    "retain",
-                    f"only {group_count} compaction candidates; minimum is {row['min_compaction_files']}",
-                )
+        file_name = PurePosixPath(name).name
+        payload = json.loads(data.decode("utf-8"))
+        if file_name.startswith("manifest_v"):
+            manifests.append(payload)
+        elif file_name.startswith("event_v"):
+            events.append(payload)
         else:
-            action, reason = "retain", "within retention and compaction thresholds"
-        actions.append(action)
-        reasons.append(reason)
-    plan["planned_action"] = actions
-    plan["action_reason"] = reasons
-    if not set(plan["planned_action"]).issubset(PLANNED_ACTIONS):
-        raise EvidenceLifecycleError("Lifecycle planner produced an unsupported action.")
-    plan["requires_explicit_apply"] = plan["planned_action"] != "retain"
-    plan["estimated_reclaimable_bytes"] = plan.apply(
-        lambda row: row["size_bytes"]
-        if row["planned_action"] == "quarantine_candidate"
-        else 0,
-        axis=1,
-    ).astype(int)
-    plan_material = {
-        "policy_contract_version": policy["contract_version"],
-        "policy_sha256": policy["policy_sha256"],
-        "plan_created_at_utc": created_at.isoformat(),
-        "rows": [
-            {
-                "relative_path": row.relative_path,
-                "sha256": row.sha256,
-                "planned_action": row.planned_action,
-            }
-            for row in plan.sort_values("relative_path").itertuples(index=False)
-        ],
-    }
-    plan_id = "elp-" + _canonical_digest(plan_material)[:24]
-    plan["plan_id"] = plan_id
-    plan["plan_created_at_utc"] = created_at
-    plan["plan_contract_version"] = PLAN_CONTRACT_VERSION
-    total_bytes = int(plan["size_bytes"].sum())
-    reclaimable_bytes = int(plan["estimated_reclaimable_bytes"].sum())
-    compact_bytes = int(
-        plan.loc[plan["planned_action"] == "compact_candidate", "size_bytes"].sum()
+            raise EvidenceBundleError(
+                f"Candidate history contains an unexpected file: {file_name}."
+            )
+    try:
+        latest = verify_candidate_history(manifests, events)
+    except Exception as exc:
+        raise EvidenceBundleError(
+            f"Bundled candidate history failed verification: {exc}"
+        ) from exc
+    if latest["candidate_id"] != candidate_id:
+        raise EvidenceBundleError("Bundled candidate history has the wrong ID.")
+    return latest
+
+
+def _tar_bytes(payloads: dict[str, bytes]) -> bytes:
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as archive:
+        for name in sorted(payloads):
+            safe_name = _safe_archive_path(name)
+            data = payloads[name]
+            info = tarfile.TarInfo(safe_name)
+            info.size = len(data)
+            info.mtime = 0
+            info.mode = 0o644
+            info.uid = 0
+            info.gid = 0
+            info.uname = ""
+            info.gname = ""
+            archive.addfile(info, io.BytesIO(data))
+    return buffer.getvalue()
+
+
+def create_evidence_bundle(
+    data_root: Path,
+    candidate_dir: Path,
+    role_paths: dict[str, Path],
+    *,
+    extra_paths: Iterable[Path] = (),
+    actor: str,
+    reason: str,
+    created_at_utc: Any | None = None,
+    output_root: Path | None = None,
+    max_bundle_bytes: int = 536_870_912,
+) -> tuple[dict[str, Any], Path]:
+    """Create a deterministic approved-candidate evidence tar archive."""
+    root = _root(data_root, "data_root")
+    actor = _text(actor, "actor")
+    reason = _text(reason, "reason")
+    created_at = _utc_iso(
+        created_at_utc or datetime.now(timezone.utc), "created_at_utc"
     )
-    gib = 1024**3
-    summary = {
-        "plan_id": plan_id,
-        "plan_created_at_utc": created_at.isoformat(),
-        "inventory_as_of_utc": pd.Timestamp(
-            plan["inventory_as_of_utc"].iloc[0]
-        ).isoformat(),
-        "policy_contract_version": policy["contract_version"],
-        "policy_sha256": policy["policy_sha256"],
-        "inventory_file_count": int(len(plan)),
-        "inventory_size_bytes": total_bytes,
-        "inventory_size_gib": total_bytes / gib,
-        "retain_file_count": int((plan["planned_action"] == "retain").sum()),
-        "compact_candidate_file_count": int(
-            (plan["planned_action"] == "compact_candidate").sum()
-        ),
-        "compact_candidate_bytes": compact_bytes,
-        "quarantine_candidate_file_count": int(
-            (plan["planned_action"] == "quarantine_candidate").sum()
-        ),
-        "estimated_reclaimable_bytes": reclaimable_bytes,
-        "estimated_reclaimable_gib": reclaimable_bytes / gib,
-        "protected_file_count": int(
-            (plan["always_protect"] | plan["protected_by_candidate"]).sum()
-        ),
-        "unclassified_file_count": int((~plan["classified"]).sum()),
-        "monthly_storage_cost_per_gib": cost,
-        "estimated_current_monthly_storage_cost": total_bytes / gib * cost,
-        "estimated_reclaimable_monthly_storage_cost": (
-            reclaimable_bytes / gib * cost
-        ),
-        "mutation_performed": False,
-        "summary_contract_version": SUMMARY_CONTRACT_VERSION,
+    if isinstance(max_bundle_bytes, bool) or int(max_bundle_bytes) < 1:
+        raise EvidenceBundleError("max_bundle_bytes must be a positive integer.")
+    max_bundle_bytes = int(max_bundle_bytes)
+    candidate_relative, candidate_path = _candidate_directory(root, candidate_dir)
+    manifest_files = sorted(candidate_path.glob("manifest_v*.json"))
+    event_files = sorted(candidate_path.glob("event_v*.json"))
+    manifests = [json.loads(path.read_text(encoding="utf-8")) for path in manifest_files]
+    events = [json.loads(path.read_text(encoding="utf-8")) for path in event_files]
+    try:
+        candidate = verify_candidate_history(manifests, events)
+    except Exception as exc:
+        raise EvidenceBundleError(f"Candidate history failed verification: {exc}") from exc
+    if candidate["candidate_state"] != "approved":
+        raise EvidenceBundleError(
+            "Only an approved candidate can be packaged for recovery."
+        )
+    if candidate.get("deployment_authorized") is not False or candidate.get(
+        "active_model_unchanged"
+    ) is not True:
+        raise EvidenceBundleError("Candidate safety flags are invalid.")
+    if set(role_paths) != REQUIRED_ROLES:
+        missing = sorted(REQUIRED_ROLES - set(role_paths))
+        extra = sorted(set(role_paths) - REQUIRED_ROLES)
+        raise EvidenceBundleError(
+            f"Required evidence roles are incomplete; missing={missing}, extra={extra}."
+        )
+    payloads: dict[str, bytes] = {}
+    entries: list[dict[str, Any]] = []
+    source_paths: set[Path] = set()
+
+    def add_file(role: str, source_relative: Path, source: Path, archive_path: str) -> None:
+        if source in source_paths:
+            raise EvidenceBundleError(f"Evidence source is supplied more than once: {source}.")
+        source_paths.add(source)
+        archive_name = _safe_archive_path(archive_path)
+        if archive_name in payloads or archive_name == "bundle_manifest.json":
+            raise EvidenceBundleError(f"Duplicate bundle archive path: {archive_name}.")
+        data = source.read_bytes()
+        payloads[archive_name] = data
+        entries.append(
+            {
+                "entry_sequence": len(entries) + 1,
+                "role": role,
+                "archive_path": archive_name,
+                "source_relative_path": source_relative.as_posix(),
+                "size_bytes": len(data),
+                "sha256": _sha256_bytes(data),
+            }
+        )
+
+    for path in [*manifest_files, *event_files]:
+        relative = path.relative_to(root)
+        archive_path = f"candidate/{candidate['candidate_id']}/{path.name}"
+        add_file("candidate_history", relative, path, archive_path)
+    for role in sorted(REQUIRED_ROLES):
+        relative, source = _source_under(root, role_paths[role], role)
+        data = source.read_bytes()
+        _validate_role(role, source.name, data, candidate)
+        add_file(role, relative, source, f"evidence/{role}/{relative.as_posix()}")
+    for path in extra_paths:
+        relative, source = _source_under(root, Path(path), "extra_evidence")
+        add_file("extra_evidence", relative, source, f"evidence/extra/{relative.as_posix()}")
+    total_source_bytes = sum(entry["size_bytes"] for entry in entries)
+    if total_source_bytes > max_bundle_bytes:
+        raise EvidenceBundleError(
+            f"Bundle sources total {total_source_bytes} bytes, above max_bundle_bytes={max_bundle_bytes}."
+        )
+    core = {
+        "created_at_utc": created_at,
+        "actor": actor,
+        "reason": reason,
+        "candidate_id": candidate["candidate_id"],
+        "candidate_version": candidate["candidate_version"],
+        "repository": candidate["repository"],
+        "code_commit_sha": candidate["code_commit_sha"],
+        "code_tree_sha": candidate["code_tree_sha"],
+        "promotion_assessment_id": candidate["promotion_assessment_id"],
+        "comparison_run_id": candidate["comparison_run_id"],
+        "reconciliation_run_id": candidate["reconciliation_run_id"],
+        "provider_health_monitor_run_id": candidate["provider_health_monitor_run_id"],
+        "entries": entries,
     }
-    return plan.reset_index(drop=True), summary
+    bundle_id = "ceb-" + _digest(core)[:24]
+    manifest = {
+        "bundle_id": bundle_id,
+        "created_at_utc": created_at,
+        "actor": actor,
+        "reason": reason,
+        "candidate_id": candidate["candidate_id"],
+        "candidate_state": candidate["candidate_state"],
+        "candidate_version": candidate["candidate_version"],
+        "repository": candidate["repository"],
+        "code_commit_sha": candidate["code_commit_sha"],
+        "code_tree_sha": candidate["code_tree_sha"],
+        "promotion_assessment_id": candidate["promotion_assessment_id"],
+        "comparison_run_id": candidate["comparison_run_id"],
+        "reconciliation_run_id": candidate["reconciliation_run_id"],
+        "provider_health_monitor_run_id": candidate[
+            "provider_health_monitor_run_id"
+        ],
+        "entry_count": len(entries),
+        "total_entry_bytes": total_source_bytes,
+        "entries": entries,
+        "deployment_authorized": False,
+        "active_model_unchanged": True,
+        "source_files_mutated": False,
+        "bundle_contract_version": BUNDLE_CONTRACT_VERSION,
+    }
+    manifest["manifest_hash"] = _digest(manifest, exclude=("manifest_hash",))
+    payloads["bundle_manifest.json"] = (
+        json.dumps(_canonical(manifest), indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+    tar_data = _tar_bytes(payloads)
+    if len(tar_data) > max_bundle_bytes + 10_485_760:
+        raise EvidenceBundleError("Tar overhead exceeded the permitted bundle bound.")
+    output_base = Path(output_root) if output_root is not None else root / "bundles"
+    if not output_base.is_absolute():
+        output_base = root / output_base
+    output_base.parent.mkdir(parents=True, exist_ok=True)
+    if output_base.exists() and output_base.is_symlink():
+        raise EvidenceBundleError("output_root cannot be a symbolic link.")
+    output_directory = output_base / candidate["candidate_id"]
+    output_path = output_directory / f"evidence_bundle_{bundle_id}.tar"
+    temporary = output_path.with_suffix(".tmp")
+    for path in (output_path, temporary):
+        if path.exists():
+            raise FileExistsError(f"Refusing to overwrite {path}.")
+    output_directory.mkdir(parents=True, exist_ok=True)
+    try:
+        with temporary.open("xb") as handle:
+            handle.write(tar_data)
+        temporary.replace(output_path)
+        verified, _ = verify_evidence_bundle(output_path, max_bundle_bytes=max_bundle_bytes)
+        if verified["bundle_id"] != bundle_id:
+            raise EvidenceBundleError("Created bundle failed identity verification.")
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        output_path.unlink(missing_ok=True)
+        raise
+    return manifest, output_path
+
+
+def _read_bundle_payloads(
+    bundle_path: Path, *, max_bundle_bytes: int
+) -> tuple[dict[str, bytes], str]:
+    path = Path(bundle_path)
+    if path.is_symlink() or not path.is_file():
+        raise EvidenceBundleError("bundle_path must be a regular non-symlink file.")
+    if path.stat().st_size > max_bundle_bytes + 10_485_760:
+        raise EvidenceBundleError("Bundle exceeds the configured size bound.")
+    payloads: dict[str, bytes] = {}
+    with tarfile.open(path, mode="r:") as archive:
+        for member in archive.getmembers():
+            name = _safe_archive_path(member.name, "tar member name")
+            if not member.isfile() or member.issym() or member.islnk():
+                raise EvidenceBundleError(
+                    f"Bundle contains a non-regular member: {name}."
+                )
+            if name in payloads:
+                raise EvidenceBundleError(f"Bundle contains duplicate member: {name}.")
+            extracted = archive.extractfile(member)
+            if extracted is None:
+                raise EvidenceBundleError(f"Bundle member cannot be read: {name}.")
+            data = extracted.read(max_bundle_bytes + 1)
+            if len(data) != member.size or len(data) > max_bundle_bytes:
+                raise EvidenceBundleError(f"Bundle member size is invalid: {name}.")
+            payloads[name] = data
+    return payloads, _sha256_file(path)
+
+
+def verify_evidence_bundle(
+    bundle_path: Path, *, max_bundle_bytes: int = 536_870_912
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Verify archive safety, hashes, evidence identities, and candidate history."""
+    payloads, bundle_sha = _read_bundle_payloads(
+        bundle_path, max_bundle_bytes=max_bundle_bytes
+    )
+    if "bundle_manifest.json" not in payloads:
+        raise EvidenceBundleError("Bundle is missing bundle_manifest.json.")
+    manifest = json.loads(payloads["bundle_manifest.json"].decode("utf-8"))
+    if manifest.get("bundle_contract_version") != BUNDLE_CONTRACT_VERSION:
+        raise EvidenceBundleError("Unsupported bundle contract.")
+    if manifest.get("deployment_authorized") is not False:
+        raise EvidenceBundleError("Bundle cannot authorize deployment.")
+    if manifest.get("active_model_unchanged") is not True:
+        raise EvidenceBundleError("Bundle must retain the active model unchanged.")
+    if manifest.get("source_files_mutated") is not False:
+        raise EvidenceBundleError("Bundle cannot claim source mutation.")
+    if manifest.get("manifest_hash") != _digest(
+        manifest, exclude=("manifest_hash",)
+    ):
+        raise EvidenceBundleError("Bundle manifest hash is invalid.")
+    bundle_id = _text(manifest.get("bundle_id"), "bundle_id")
+    if not BUNDLE_ID_PATTERN.fullmatch(bundle_id):
+        raise EvidenceBundleError("Bundle ID is malformed.")
+    entries = manifest.get("entries")
+    if not isinstance(entries, list) or not entries:
+        raise EvidenceBundleError("Bundle manifest has no entries.")
+    if manifest.get("entry_count") != len(entries):
+        raise EvidenceBundleError("Bundle entry count is inconsistent.")
+    expected_names = {"bundle_manifest.json"}
+    role_payloads: dict[str, tuple[str, bytes]] = {}
+    total = 0
+    for sequence, entry in enumerate(entries, start=1):
+        if entry.get("entry_sequence") != sequence:
+            raise EvidenceBundleError("Bundle entries are not contiguous.")
+        archive_path = _safe_archive_path(entry.get("archive_path"))
+        if archive_path in expected_names:
+            raise EvidenceBundleError("Bundle entry archive paths are duplicated.")
+        expected_names.add(archive_path)
+        if archive_path not in payloads:
+            raise EvidenceBundleError(f"Bundle entry is missing: {archive_path}.")
+        data = payloads[archive_path]
+        if len(data) != entry.get("size_bytes") or _sha256_bytes(data) != entry.get(
+            "sha256"
+        ):
+            raise EvidenceBundleError(f"Bundle entry identity is invalid: {archive_path}.")
+        total += len(data)
+        role = _text(entry.get("role"), "role")
+        if role in REQUIRED_ROLES:
+            if role in role_payloads:
+                raise EvidenceBundleError(f"Bundle contains duplicate role: {role}.")
+            role_payloads[role] = (archive_path, data)
+    if set(payloads) != expected_names:
+        unexpected = sorted(set(payloads) - expected_names)
+        raise EvidenceBundleError(f"Bundle contains unexpected members: {unexpected}.")
+    if total != manifest.get("total_entry_bytes"):
+        raise EvidenceBundleError("Bundle byte total is inconsistent.")
+    if set(role_payloads) != REQUIRED_ROLES:
+        raise EvidenceBundleError("Bundle does not contain all required evidence roles.")
+    candidate_id = _text(manifest.get("candidate_id"), "candidate_id")
+    candidate = _candidate_history_from_payloads(payloads, candidate_id)
+    if candidate["candidate_state"] != "approved":
+        raise EvidenceBundleError("Bundled candidate is not approved.")
+    candidate_fields = (
+        "candidate_version",
+        "repository",
+        "code_commit_sha",
+        "code_tree_sha",
+        "promotion_assessment_id",
+        "comparison_run_id",
+        "reconciliation_run_id",
+        "provider_health_monitor_run_id",
+    )
+    for field in candidate_fields:
+        if manifest.get(field) != candidate.get(field):
+            raise EvidenceBundleError(
+                f"Bundle manifest does not match candidate field {field}."
+            )
+    for role, (name, data) in role_payloads.items():
+        _validate_role(role, name, data, candidate)
+    return manifest, {
+        "bundle_id": bundle_id,
+        "bundle_sha256": bundle_sha,
+        "verification_status": "verified",
+        "verified_entry_count": len(entries),
+        "verified_total_entry_bytes": total,
+        "candidate_id": candidate_id,
+        "candidate_state": candidate["candidate_state"],
+        "deployment_authorized": False,
+        "active_model_unchanged": True,
+    }
+
+
+def recover_evidence_bundle(
+    bundle_path: Path,
+    destination: Path,
+    *,
+    confirm_bundle_id: str,
+    actor: str,
+    reason: str,
+    recovered_at_utc: Any | None = None,
+    max_bundle_bytes: int = 536_870_912,
+) -> tuple[dict[str, Any], Path]:
+    """Recover a verified bundle into a new directory and verify every file."""
+    manifest, verification = verify_evidence_bundle(
+        bundle_path, max_bundle_bytes=max_bundle_bytes
+    )
+    if _text(confirm_bundle_id, "confirm_bundle_id") != manifest["bundle_id"]:
+        raise EvidenceBundleError("confirm_bundle_id must exactly match the bundle.")
+    actor = _text(actor, "actor")
+    reason = _text(reason, "reason")
+    recovered_at = _utc_iso(
+        recovered_at_utc or datetime.now(timezone.utc), "recovered_at_utc"
+    )
+    destination = Path(destination)
+    if destination.exists() or destination.is_symlink():
+        raise EvidenceBundleError("Recovery destination must not already exist.")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.parent.is_symlink():
+        raise EvidenceBundleError("Recovery destination parent cannot be a symlink.")
+    temporary = destination.parent / f".{destination.name}.tmp-{manifest['bundle_id']}"
+    if temporary.exists() or temporary.is_symlink():
+        raise EvidenceBundleError("Recovery temporary directory already exists.")
+    payloads, bundle_sha = _read_bundle_payloads(
+        bundle_path, max_bundle_bytes=max_bundle_bytes
+    )
+    material = {
+        "bundle_id": manifest["bundle_id"],
+        "bundle_sha256": bundle_sha,
+        "recovered_at_utc": recovered_at,
+        "actor": actor,
+        "reason": reason,
+        "destination_name": destination.name,
+    }
+    recovery_id = "rcv-" + _digest(material)[:24]
+    event = {
+        "recovery_id": recovery_id,
+        "bundle_id": manifest["bundle_id"],
+        "recovered_at_utc": recovered_at,
+        "actor": actor,
+        "reason": reason,
+        "destination_name": destination.name,
+        "bundle_sha256": bundle_sha,
+        "bundle_manifest_hash": manifest["manifest_hash"],
+        "candidate_id": manifest["candidate_id"],
+        "candidate_state": manifest["candidate_state"],
+        "recovered_entry_count": manifest["entry_count"],
+        "recovered_total_entry_bytes": manifest["total_entry_bytes"],
+        "recovery_status": "verified",
+        "deployment_authorized": False,
+        "active_model_unchanged": True,
+        "source_files_mutated": False,
+        "recovery_contract_version": RECOVERY_CONTRACT_VERSION,
+    }
+    event["recovery_event_hash"] = _digest(
+        event, exclude=("recovery_event_hash",)
+    )
+    event_name = f"recovery_verification_{recovery_id}.json"
+    try:
+        temporary.mkdir(parents=True)
+        for name, data in sorted(payloads.items()):
+            safe = PurePosixPath(_safe_archive_path(name))
+            output = temporary.joinpath(*safe.parts)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            if output.exists():
+                raise EvidenceBundleError(f"Recovery path collision: {name}.")
+            with output.open("xb") as handle:
+                handle.write(data)
+        for entry in manifest["entries"]:
+            output = temporary.joinpath(
+                *PurePosixPath(entry["archive_path"]).parts
+            )
+            if output.stat().st_size != entry["size_bytes"] or _sha256_file(
+                output
+            ) != entry["sha256"]:
+                raise EvidenceBundleError(
+                    f"Recovered entry failed verification: {entry['archive_path']}."
+                )
+        event_path = temporary / event_name
+        with event_path.open("x", encoding="utf-8") as handle:
+            json.dump(_canonical(event), handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        candidate_directory = temporary / "candidate" / manifest["candidate_id"]
+        manifests = [
+            json.loads(path.read_text(encoding="utf-8"))
+            for path in sorted(candidate_directory.glob("manifest_v*.json"))
+        ]
+        events = [
+            json.loads(path.read_text(encoding="utf-8"))
+            for path in sorted(candidate_directory.glob("event_v*.json"))
+        ]
+        latest = verify_candidate_history(manifests, events)
+        if latest["candidate_id"] != manifest["candidate_id"]:
+            raise EvidenceBundleError("Recovered candidate history is inconsistent.")
+        temporary.replace(destination)
+    except Exception:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
+    final_event_path = destination / event_name
+    recovered_verification = verify_recovered_bundle(destination)
+    if recovered_verification["recovery_id"] != recovery_id:
+        raise EvidenceBundleError("Recovery verification identity is inconsistent.")
+    return event, final_event_path
+
+
+def verify_recovered_bundle(destination: Path) -> dict[str, Any]:
+    """Verify a previously recovered bundle directory without its source archive."""
+    root = Path(destination)
+    if root.is_symlink() or not root.is_dir():
+        raise EvidenceBundleError("Recovered bundle destination must be a directory.")
+    manifest_path = root / "bundle_manifest.json"
+    if not manifest_path.is_file() or manifest_path.is_symlink():
+        raise EvidenceBundleError("Recovered bundle manifest is missing.")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("bundle_contract_version") != BUNDLE_CONTRACT_VERSION or manifest.get(
+        "manifest_hash"
+    ) != _digest(manifest, exclude=("manifest_hash",)):
+        raise EvidenceBundleError("Recovered bundle manifest is invalid.")
+    expected = {"bundle_manifest.json"}
+    payloads: dict[str, bytes] = {"bundle_manifest.json": manifest_path.read_bytes()}
+    for entry in manifest["entries"]:
+        archive_path = _safe_archive_path(entry["archive_path"])
+        expected.add(archive_path)
+        path = root.joinpath(*PurePosixPath(archive_path).parts)
+        if path.is_symlink() or not path.is_file():
+            raise EvidenceBundleError(f"Recovered entry is missing: {archive_path}.")
+        data = path.read_bytes()
+        if len(data) != entry["size_bytes"] or _sha256_bytes(data) != entry["sha256"]:
+            raise EvidenceBundleError(f"Recovered entry changed: {archive_path}.")
+        payloads[archive_path] = data
+    event_paths = sorted(root.glob("recovery_verification_*.json"))
+    if len(event_paths) != 1:
+        raise EvidenceBundleError("Recovered bundle must contain one recovery event.")
+    event = json.loads(event_paths[0].read_text(encoding="utf-8"))
+    if event.get("recovery_contract_version") != RECOVERY_CONTRACT_VERSION or event.get(
+        "recovery_event_hash"
+    ) != _digest(event, exclude=("recovery_event_hash",)):
+        raise EvidenceBundleError("Recovery event is invalid.")
+    actual_files = {
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+    expected.add(event_paths[0].relative_to(root).as_posix())
+    if actual_files != expected:
+        raise EvidenceBundleError("Recovered bundle contains unexpected files.")
+    candidate = _candidate_history_from_payloads(payloads, manifest["candidate_id"])
+    if candidate["candidate_state"] != "approved":
+        raise EvidenceBundleError("Recovered candidate is not approved.")
+    if event.get("bundle_id") != manifest["bundle_id"] or event.get(
+        "bundle_manifest_hash"
+    ) != manifest["manifest_hash"]:
+        raise EvidenceBundleError("Recovery event does not match the bundle manifest.")
+    return {
+        "recovery_id": event["recovery_id"],
+        "bundle_id": manifest["bundle_id"],
+        "candidate_id": manifest["candidate_id"],
+        "candidate_state": candidate["candidate_state"],
+        "verification_status": "verified",
+        "verified_entry_count": manifest["entry_count"],
+        "deployment_authorized": False,
+        "active_model_unchanged": True,
+        "source_files_mutated": False,
+    }
