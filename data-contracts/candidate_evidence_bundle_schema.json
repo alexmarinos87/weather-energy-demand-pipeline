@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "candidate_evidence_bundle_v1",
+  "type": "object",
+  "required": [
+    "bundle_id",
+    "created_at_utc",
+    "actor",
+    "reason",
+    "candidate_id",
+    "candidate_state",
+    "candidate_version",
+    "repository",
+    "code_commit_sha",
+    "code_tree_sha",
+    "promotion_assessment_id",
+    "comparison_run_id",
+    "reconciliation_run_id",
+    "provider_health_monitor_run_id",
+    "entry_count",
+    "total_entry_bytes",
+    "entries",
+    "deployment_authorized",
+    "active_model_unchanged",
+    "source_files_mutated",
+    "bundle_contract_version",
+    "manifest_hash"
+  ],
+  "properties": {
+    "bundle_id": {"type": "string", "pattern": "^ceb-[0-9a-f]{24}$"},
+    "created_at_utc": {"type": "string", "format": "date-time"},
+    "actor": {"type": "string", "minLength": 1},
+    "reason": {"type": "string", "minLength": 1},
+    "candidate_id": {"type": "string", "pattern": "^twc-[0-9a-f]{24}$"},
+    "candidate_state": {"const": "approved"},
+    "candidate_version": {"type": "string", "minLength": 1},
+    "repository": {"type": "string", "minLength": 3},
+    "code_commit_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "code_tree_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "promotion_assessment_id": {"type": "string", "minLength": 1},
+    "comparison_run_id": {"type": "string", "minLength": 1},
+    "reconciliation_run_id": {"type": "string", "minLength": 1},
+    "provider_health_monitor_run_id": {"type": "string", "minLength": 1},
+    "entry_count": {"type": "integer", "minimum": 6},
+    "total_entry_bytes": {"type": "integer", "minimum": 1},
+    "entries": {
+      "type": "array",
+      "minItems": 6,
+      "items": {
+        "type": "object",
+        "required": [
+          "entry_sequence",
+          "role",
+          "archive_path",
+          "source_relative_path",
+          "size_bytes",
+          "sha256"
+        ],
+        "properties": {
+          "entry_sequence": {"type": "integer", "minimum": 1},
+          "role": {
+            "enum": [
+              "candidate_history",
+              "promotion_summary",
+              "comparison_predictions",
+              "reconciliation_metrics",
+              "provider_health_summary",
+              "extra_evidence"
+            ]
+          },
+          "archive_path": {"type": "string", "minLength": 1},
+          "source_relative_path": {"type": "string", "minLength": 1},
+          "size_bytes": {"type": "integer", "minimum": 0},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "deployment_authorized": {"const": false},
+    "active_model_unchanged": {"const": true},
+    "source_files_mutated": {"const": false},
+    "bundle_contract_version": {"const": "candidate-evidence-bundle-v1"},
+    "manifest_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "additionalProperties": false
+}
