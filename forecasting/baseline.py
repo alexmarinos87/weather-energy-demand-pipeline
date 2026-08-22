@@ -8,6 +8,13 @@ from forecasting.contracts import (
 )
 from forecasting.demo import build_demo_feature_frame
 from forecasting.evaluation import run_chronological_backtest
+from forecasting.evidence_compaction import (
+    EvidenceCompactionError,
+    load_compaction_manifest,
+    prepare_compaction_groups,
+    stage_compactions,
+    verify_staged_compaction,
+)
 from forecasting.evidence_lifecycle import (
     EvidenceLifecycleError,
     inventory_evidence,
@@ -72,6 +79,7 @@ from forecasting.weather_reconciliation import (
 
 __all__ = [
     "BacktestConfig",
+    "EvidenceCompactionError",
     "EvidenceLifecycleError",
     "EvidenceQuarantineError",
     "ForecastProviderMonitoringConfig",
@@ -93,11 +101,13 @@ __all__ = [
     "build_supervised_frame",
     "inventory_evidence",
     "load_candidate_history",
+    "load_compaction_manifest",
     "load_protected_candidate_references",
     "load_quarantine_manifest",
     "load_retention_policy",
     "monitor_forecast_provider_health",
     "plan_evidence_lifecycle",
+    "prepare_compaction_groups",
     "prepare_comparison_predictions",
     "prepare_feature_frame",
     "prepare_forecast_reconciliation_input",
@@ -115,9 +125,11 @@ __all__ = [
     "run_chronological_backtest",
     "run_rolling_origin_backtest",
     "run_weather_model_comparison",
+    "stage_compactions",
     "transition_candidate",
     "verify_candidate_history",
     "verify_manifest",
     "verify_quarantine_state",
+    "verify_staged_compaction",
     "write_candidate_revision",
 ]
