@@ -8,6 +8,13 @@ from forecasting.contracts import (
 )
 from forecasting.demo import build_demo_feature_frame
 from forecasting.evaluation import run_chronological_backtest
+from forecasting.evidence_lifecycle import (
+    EvidenceLifecycleError,
+    inventory_evidence,
+    load_protected_candidate_references,
+    load_retention_policy,
+    plan_evidence_lifecycle,
+)
 from forecasting.forecast_weather import (
     ForecastWeatherConfig,
     ForecastWeatherContractError,
@@ -57,6 +64,7 @@ from forecasting.weather_reconciliation import (
 
 __all__ = [
     "BacktestConfig",
+    "EvidenceLifecycleError",
     "ForecastProviderMonitoringConfig",
     "ForecastProviderMonitoringError",
     "ForecastWeatherConfig",
@@ -74,8 +82,12 @@ __all__ = [
     "build_demo_forecast_weather_frame",
     "build_rolling_origin_folds",
     "build_supervised_frame",
+    "inventory_evidence",
     "load_candidate_history",
+    "load_protected_candidate_references",
+    "load_retention_policy",
     "monitor_forecast_provider_health",
+    "plan_evidence_lifecycle",
     "prepare_comparison_predictions",
     "prepare_feature_frame",
     "prepare_forecast_reconciliation_input",

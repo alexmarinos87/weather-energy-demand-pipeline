@@ -2,6 +2,7 @@
 
 from forecasting.baseline import (
     BacktestConfig,
+    EvidenceLifecycleError,
     ForecastProviderMonitoringConfig,
     ForecastProviderMonitoringError,
     ForecastWeatherConfig,
@@ -19,8 +20,12 @@ from forecasting.baseline import (
     build_demo_forecast_weather_frame,
     build_rolling_origin_folds,
     build_supervised_frame,
+    inventory_evidence,
     load_candidate_history,
+    load_protected_candidate_references,
+    load_retention_policy,
     monitor_forecast_provider_health,
+    plan_evidence_lifecycle,
     prepare_comparison_predictions,
     prepare_feature_frame,
     prepare_forecast_reconciliation_input,
@@ -43,6 +48,7 @@ from forecasting.baseline import (
 
 __all__ = [
     "BacktestConfig",
+    "EvidenceLifecycleError",
     "ForecastProviderMonitoringConfig",
     "ForecastProviderMonitoringError",
     "ForecastWeatherConfig",
@@ -60,8 +66,12 @@ __all__ = [
     "build_demo_forecast_weather_frame",
     "build_rolling_origin_folds",
     "build_supervised_frame",
+    "inventory_evidence",
     "load_candidate_history",
+    "load_protected_candidate_references",
+    "load_retention_policy",
     "monitor_forecast_provider_health",
+    "plan_evidence_lifecycle",
     "prepare_comparison_predictions",
     "prepare_feature_frame",
     "prepare_forecast_reconciliation_input",
