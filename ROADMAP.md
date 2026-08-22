@@ -11,18 +11,19 @@ The repository is developed in dependency order. Each goal is one bounded PR, va
 | G5 | Forecast-provider drift, freshness, snapshot cadence/completeness, and reconciliation monitoring | Implemented as advisory local evidence |
 | G6 | Immutable model-candidate registration and explicit human review decisions with no deployment authority | Implemented |
 | G7a | Content-hashed evidence inventory and dry-run retention, compaction, quarantine, and cost plan | Implemented |
-| G7b | Explicit reversible quarantine and hash-verified restore | Next |
-| G7c | Schema-compatible small-file compaction with source-manifest verification | Planned |
+| G7b | Explicit reversible quarantine and hash-verified restore with no permanent deletion | Implemented |
+| G7c | Schema-compatible small-file compaction with source-manifest verification | Next |
 | G8 | GitHub `main` protection and required CI status checks | Repository setting required |
 | G9 | End-to-end reproducible evidence bundle and recovery verification | Planned |
 
 ## Dependency rules
 
-- Do not schedule or promote the forecast-weather path merely because ingestion, comparison, monitoring, candidate registration, or lifecycle planning support exists.
+- Do not schedule or promote the forecast-weather path merely because ingestion, comparison, monitoring, candidate registration, or lifecycle support exists.
 - Do not replace the observed-weather baseline; use it as the paired control.
 - Require reconciliation, promotion assessment, representative provider-health evidence, and an explicit reviewed candidate history before any controlled trial.
 - An `approved` registry state is evidence approval only; it never authorizes deployment or changes the active model.
-- Lifecycle planning is non-mutating. Any file move must use a separate explicit, reversible, hash-verifying command.
+- Lifecycle planning is non-mutating. Quarantine requires exact plan confirmation, current content-hash verification, named authority, and an immutable manifest.
+- Quarantine is reversible and cannot overwrite a source during restore. Permanent deletion remains unavailable.
 - Unclassified evidence is retained by default, and protected candidate histories block lifecycle changes to referenced evidence.
 - Keep credentials outside the repository and prohibit live calls in CI.
 - Review quota, retention, capacity, and failure behaviour before enabling a recurring forecast trigger.
