@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "forecast_weather_reconciliation_v1",
+  "type": "object",
+  "required": [
+    "reconciliation_run_id",
+    "reconciliation_run_timestamp_utc",
+    "source_area",
+    "city",
+    "forecast_provider",
+    "forecast_model",
+    "forecast_issued_at_utc",
+    "forecast_ingested_at_utc",
+    "forecast_valid_at_utc",
+    "forecast_temperature_c",
+    "forecast_humidity_pct",
+    "forecast_provider_lead_minutes",
+    "forecast_pipeline_lead_minutes",
+    "forecast_lead_time_bucket",
+    "observation_tolerance_minutes",
+    "reconciliation_status",
+    "reconciliation_contract_version"
+  ],
+  "properties": {
+    "reconciliation_run_id": {"type": "string", "minLength": 1},
+    "reconciliation_run_timestamp_utc": {"type": "string", "format": "date-time"},
+    "source_area": {"type": "string", "minLength": 1},
+    "city": {"type": "string", "minLength": 1},
+    "forecast_provider": {"type": "string", "minLength": 1},
+    "forecast_model": {"type": "string", "minLength": 1},
+    "forecast_issue_basis": {"type": ["string", "null"]},
+    "raw_snapshot_id": {"type": ["string", "null"]},
+    "forecast_provider_record_id": {"type": ["string", "null"]},
+    "forecast_issued_at_utc": {"type": "string", "format": "date-time"},
+    "forecast_ingested_at_utc": {"type": "string", "format": "date-time"},
+    "forecast_valid_at_utc": {"type": "string", "format": "date-time"},
+    "forecast_temperature_c": {"type": "number"},
+    "forecast_humidity_pct": {"type": "number", "minimum": 0, "maximum": 100},
+    "forecast_provider_lead_minutes": {"type": "number", "exclusiveMinimum": 0},
+    "forecast_pipeline_lead_minutes": {"type": "number", "exclusiveMinimum": 0},
+    "forecast_lead_time_bucket": {
+      "enum": ["00-06h", "06-12h", "12-24h", "24-48h", "48h+"]
+    },
+    "observation_tolerance_minutes": {"type": "integer", "minimum": 0},
+    "reconciliation_status": {"enum": ["matched", "unmatched"]},
+    "observation_event_timestamp_utc": {"type": ["string", "null"], "format": "date-time"},
+    "observation_ingested_at_utc": {"type": ["string", "null"], "format": "date-time"},
+    "observation_source_file": {"type": ["string", "null"]},
+    "observed_temperature_c": {"type": ["number", "null"]},
+    "observed_humidity_pct": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+    "observation_valid_time_delta_minutes": {"type": ["number", "null"]},
+    "observation_absolute_valid_time_delta_minutes": {"type": ["number", "null"], "minimum": 0},
+    "observation_ingestion_lag_minutes": {"type": ["number", "null"], "minimum": 0},
+    "temperature_error_c": {"type": ["number", "null"]},
+    "temperature_absolute_error_c": {"type": ["number", "null"], "minimum": 0},
+    "temperature_squared_error_c2": {"type": ["number", "null"], "minimum": 0},
+    "humidity_error_pct": {"type": ["number", "null"]},
+    "humidity_absolute_error_pct": {"type": ["number", "null"], "minimum": 0},
+    "humidity_squared_error_pct2": {"type": ["number", "null"], "minimum": 0},
+    "reconciliation_contract_version": {"const": "forecast-observation-reconciliation-v1"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"reconciliation_status": {"const": "matched"}}},
+      "then": {
+        "required": [
+          "observation_event_timestamp_utc",
+          "observation_ingested_at_utc",
+          "observed_temperature_c",
+          "observed_humidity_pct",
+          "observation_valid_time_delta_minutes",
+          "observation_absolute_valid_time_delta_minutes",
+          "observation_ingestion_lag_minutes",
+          "temperature_error_c",
+          "temperature_absolute_error_c",
+          "temperature_squared_error_c2",
+          "humidity_error_pct",
+          "humidity_absolute_error_pct",
+          "humidity_squared_error_pct2"
+        ],
+        "properties": {
+          "observation_event_timestamp_utc": {"type": "string", "format": "date-time"},
+          "observation_ingested_at_utc": {"type": "string", "format": "date-time"},
+          "observed_temperature_c": {"type": "number"},
+          "observed_humidity_pct": {"type": "number", "minimum": 0, "maximum": 100},
+          "observation_valid_time_delta_minutes": {"type": "number"},
+          "observation_absolute_valid_time_delta_minutes": {"type": "number", "minimum": 0},
+          "observation_ingestion_lag_minutes": {"type": "number", "minimum": 0},
+          "temperature_error_c": {"type": "number"},
+          "temperature_absolute_error_c": {"type": "number", "minimum": 0},
+          "temperature_squared_error_c2": {"type": "number", "minimum": 0},
+          "humidity_error_pct": {"type": "number"},
+          "humidity_absolute_error_pct": {"type": "number", "minimum": 0},
+          "humidity_squared_error_pct2": {"type": "number", "minimum": 0}
+        }
+      }
+    }
+  ],
+  "additionalProperties": true
+}

@@ -24,11 +24,20 @@ from forecasting.weather_comparison import (
     prepare_weather_model_comparison,
     run_weather_model_comparison,
 )
+from forecasting.weather_reconciliation import (
+    ForecastWeatherReconciliationConfig,
+    ForecastWeatherReconciliationError,
+    prepare_forecast_reconciliation_input,
+    prepare_observed_weather_input,
+    reconcile_forecast_weather,
+)
 
 __all__ = [
     "BacktestConfig",
     "ForecastWeatherConfig",
     "ForecastWeatherContractError",
+    "ForecastWeatherReconciliationConfig",
+    "ForecastWeatherReconciliationError",
     "ForecastingContractError",
     "RollingOriginFold",
     "attach_target_forecast_weather",
@@ -37,8 +46,11 @@ __all__ = [
     "build_rolling_origin_folds",
     "build_supervised_frame",
     "prepare_feature_frame",
+    "prepare_forecast_reconciliation_input",
     "prepare_forecast_weather_frame",
+    "prepare_observed_weather_input",
     "prepare_weather_model_comparison",
+    "reconcile_forecast_weather",
     "run_chronological_backtest",
     "run_rolling_origin_backtest",
     "run_weather_model_comparison",
