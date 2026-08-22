@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "evidence_compaction_manifest_v1",
+  "type": "object",
+  "required": [
+    "operation_id",
+    "plan_id",
+    "group_id",
+    "staged_at_utc",
+    "actor",
+    "reason",
+    "category",
+    "source_parent_path",
+    "source_format",
+    "source_file_count",
+    "source_total_bytes",
+    "source_total_rows",
+    "source_schema",
+    "source_entries",
+    "compacted_output_relative_path",
+    "compacted_output_size_bytes",
+    "compacted_output_sha256",
+    "compacted_output_row_count",
+    "compacted_output_data_sha256",
+    "output_verification_status",
+    "source_files_mutated",
+    "source_files_permanently_deleted",
+    "replacement_authorized",
+    "source_quarantine_required_before_replacement",
+    "manifest_contract_version",
+    "manifest_hash"
+  ],
+  "properties": {
+    "operation_id": {"type": "string", "pattern": "^cmp-[0-9a-f]{24}$"},
+    "plan_id": {"type": "string", "pattern": "^elp-[0-9a-f]{24}$"},
+    "group_id": {"type": "string", "pattern": "^cpg-[0-9a-f]{20}$"},
+    "staged_at_utc": {"type": "string", "format": "date-time"},
+    "actor": {"type": "string", "minLength": 1},
+    "reason": {"type": "string", "minLength": 1},
+    "category": {"type": "string", "minLength": 1},
+    "source_parent_path": {"type": "string"},
+    "source_format": {"enum": ["csv", "parquet"]},
+    "source_file_count": {"type": "integer", "minimum": 2},
+    "source_total_bytes": {"type": "integer", "minimum": 0},
+    "source_total_rows": {"type": "integer", "minimum": 0},
+    "source_schema": {
+      "type": "object",
+      "required": ["columns", "dtypes"],
+      "properties": {
+        "columns": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "dtypes": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "source_entries": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": [
+          "entry_sequence",
+          "source_relative_path",
+          "source_size_bytes",
+          "source_sha256",
+          "source_row_count",
+          "source_modified_at_utc"
+        ],
+        "properties": {
+          "entry_sequence": {"type": "integer", "minimum": 1},
+          "source_relative_path": {"type": "string", "minLength": 1},
+          "source_size_bytes": {"type": "integer", "minimum": 0},
+          "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "source_row_count": {"type": "integer", "minimum": 0},
+          "source_modified_at_utc": {"type": "string", "format": "date-time"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "compacted_output_relative_path": {"type": "string", "minLength": 1},
+    "compacted_output_size_bytes": {"type": "integer", "minimum": 0},
+    "compacted_output_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "compacted_output_row_count": {"type": "integer", "minimum": 0},
+    "compacted_output_data_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "output_verification_status": {"const": "verified"},
+    "source_files_mutated": {"const": false},
+    "source_files_permanently_deleted": {"const": false},
+    "replacement_authorized": {"const": false},
+    "source_quarantine_required_before_replacement": {"const": true},
+    "manifest_contract_version": {"const": "evidence-compaction-manifest-v1"},
+    "manifest_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "additionalProperties": false
+}

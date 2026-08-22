@@ -12,9 +12,9 @@ The repository is developed in dependency order. Each goal is one bounded PR, va
 | G6 | Immutable model-candidate registration and explicit human review decisions with no deployment authority | Implemented |
 | G7a | Content-hashed evidence inventory and dry-run retention, compaction, quarantine, and cost plan | Implemented |
 | G7b | Explicit reversible quarantine and hash-verified restore with no permanent deletion | Implemented |
-| G7c | Schema-compatible small-file compaction with source-manifest verification | Next |
+| G7c | Schema-compatible compacted shadow outputs with source-manifest verification and no source replacement | Implemented |
 | G8 | GitHub `main` protection and required CI status checks | Repository setting required |
-| G9 | End-to-end reproducible evidence bundle and recovery verification | Planned |
+| G9 | End-to-end reproducible evidence bundle and recovery verification | Next |
 
 ## Dependency rules
 
@@ -24,6 +24,7 @@ The repository is developed in dependency order. Each goal is one bounded PR, va
 - An `approved` registry state is evidence approval only; it never authorizes deployment or changes the active model.
 - Lifecycle planning is non-mutating. Quarantine requires exact plan confirmation, current content-hash verification, named authority, and an immutable manifest.
 - Quarantine is reversible and cannot overwrite a source during restore. Permanent deletion remains unavailable.
+- A staged compacted output is a verified shadow copy only. Sources remain authoritative until a separate reviewed replacement workflow binds compaction verification to reversible source quarantine.
 - Unclassified evidence is retained by default, and protected candidate histories block lifecycle changes to referenced evidence.
 - Keep credentials outside the repository and prohibit live calls in CI.
 - Review quota, retention, capacity, and failure behaviour before enabling a recurring forecast trigger.
