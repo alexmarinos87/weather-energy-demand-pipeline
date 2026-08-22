@@ -6,8 +6,8 @@ The repository is developed in dependency order. Each goal is one bounded PR, va
 | --- | --- | --- |
 | G1 | Forecast-versus-observed reconciliation and lead-time quality evidence | Implemented |
 | G2 | Human-review-only target-weather promotion assessment combining evidence volume, weather quality, and paired demand-model improvement | Implemented |
-| G3 | Fabric bronze/silver ingestion parity for normalized forecast weather | Next |
-| G4 | Fabric paired `ridge_weather_lag` versus `ridge_target_weather` execution and Delta evidence | Planned |
+| G3 | Fabric bronze/silver ingestion parity for normalized forecast weather | Implemented as an optional manual subflow |
+| G4 | Fabric paired `ridge_weather_lag` versus `ridge_target_weather` execution and Delta evidence | Next |
 | G5 | Forecast-provider drift, coverage, freshness, and reconciliation monitoring | Planned |
 | G6 | Reviewed model registration and promotion controls; no unattended promotion | Planned |
 | G7 | Retention, compaction, and cost controls for raw forecasts, reconciliation, predictions, and metrics | Planned |
@@ -15,11 +15,11 @@ The repository is developed in dependency order. Each goal is one bounded PR, va
 
 ## Dependency rules
 
-- Do not add forecast weather to the canonical Fabric model before G1 and G2 produce sufficient evidence.
-- Do not schedule high-frequency forecast ingestion before retention and capacity impact are understood.
-- Do not promote a model merely because one aggregate metric improves; require paired rows, adequate history, coverage by area/horizon/lead bucket, and no material regression in protected slices.
-- Keep the existing observed-weather baseline available as the control until the target-weather path is proven and operationally supported.
+- Do not schedule or promote the forecast-weather path merely because bronze/silver support exists.
+- Do not replace the observed-weather baseline; use it as the paired control.
+- Require G1 reconciliation and G2 promotion evidence before any reviewed model change.
 - Keep credentials outside the repository and prohibit live calls in CI.
+- Review quota, retention, capacity, and failure behaviour before enabling a recurring forecast trigger.
 
 ## Reusable PR workflow
 
