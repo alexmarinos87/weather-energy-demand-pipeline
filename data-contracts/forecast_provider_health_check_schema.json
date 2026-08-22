@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "forecast_provider_health_check_v1",
+  "type": "object",
+  "required": [
+    "monitor_run_id",
+    "monitor_timestamp_utc",
+    "monitor_as_of_utc",
+    "check_scope",
+    "severity",
+    "check_name",
+    "observed_value",
+    "threshold_value",
+    "comparator",
+    "passed",
+    "details",
+    "source_area",
+    "city",
+    "forecast_provider",
+    "forecast_model",
+    "policy_version",
+    "monitoring_contract_version"
+  ],
+  "properties": {
+    "monitor_run_id": {"type": "string", "minLength": 1},
+    "monitor_timestamp_utc": {"type": "string", "format": "date-time"},
+    "monitor_as_of_utc": {"type": "string", "format": "date-time"},
+    "check_scope": {"enum": ["forecast_snapshot", "reconciliation", "drift"]},
+    "severity": {"enum": ["error", "warning"]},
+    "check_name": {"type": "string", "minLength": 1},
+    "observed_value": {"type": "number"},
+    "threshold_value": {"type": "number"},
+    "comparator": {"enum": [">=", "<=", "=="]},
+    "passed": {"type": "boolean"},
+    "details": {"type": "string", "minLength": 1},
+    "source_area": {"type": "string", "minLength": 1},
+    "city": {"type": "string", "minLength": 1},
+    "forecast_provider": {"type": "string", "minLength": 1},
+    "forecast_model": {"type": "string", "minLength": 1},
+    "forecast_issue_basis": {"type": ["string", "null"]},
+    "forecast_lead_time_bucket": {
+      "type": ["string", "null"],
+      "enum": [null, "00-06h", "06-12h", "12-24h", "24-48h", "48h+"]
+    },
+    "policy_version": {"const": "forecast-provider-health-policy-v1"},
+    "monitoring_contract_version": {"const": "forecast-provider-monitoring-v1"}
+  },
+  "additionalProperties": true
+}
