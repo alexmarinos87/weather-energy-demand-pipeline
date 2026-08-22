@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "evidence_lifecycle_plan_v1",
+  "type": "object",
+  "required": [
+    "plan_id",
+    "plan_created_at_utc",
+    "relative_path",
+    "category",
+    "sha256",
+    "size_bytes",
+    "latest_rank",
+    "protected_by_candidate",
+    "planned_action",
+    "action_reason",
+    "requires_explicit_apply",
+    "estimated_reclaimable_bytes",
+    "plan_contract_version"
+  ],
+  "properties": {
+    "plan_id": {"type": "string", "pattern": "^elp-[0-9a-f]{24}$"},
+    "plan_created_at_utc": {"type": "string", "format": "date-time"},
+    "relative_path": {"type": "string", "minLength": 1},
+    "category": {"type": "string", "minLength": 1},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "size_bytes": {"type": "integer", "minimum": 0},
+    "latest_rank": {"type": "integer", "minimum": 1},
+    "protected_by_candidate": {"type": "boolean"},
+    "candidate_protection_reason": {"type": ["string", "null"]},
+    "planned_action": {
+      "enum": ["retain", "compact_candidate", "quarantine_candidate"]
+    },
+    "action_reason": {"type": "string", "minLength": 1},
+    "requires_explicit_apply": {"type": "boolean"},
+    "estimated_reclaimable_bytes": {"type": "integer", "minimum": 0},
+    "plan_contract_version": {"const": "evidence-lifecycle-plan-v1"}
+  },
+  "additionalProperties": true
+}

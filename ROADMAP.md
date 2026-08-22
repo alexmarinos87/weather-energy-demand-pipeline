@@ -10,16 +10,20 @@ The repository is developed in dependency order. Each goal is one bounded PR, va
 | G4 | Fabric paired `ridge_weather_lag` versus `ridge_target_weather` execution and independent Delta evidence | Implemented as an optional manual subflow |
 | G5 | Forecast-provider drift, freshness, snapshot cadence/completeness, and reconciliation monitoring | Implemented as advisory local evidence |
 | G6 | Immutable model-candidate registration and explicit human review decisions with no deployment authority | Implemented |
-| G7 | Retention, inventory, compaction, and cost controls for accumulated evidence | Next |
+| G7a | Content-hashed evidence inventory and dry-run retention, compaction, quarantine, and cost plan | Implemented |
+| G7b | Explicit reversible quarantine and hash-verified restore | Next |
+| G7c | Schema-compatible small-file compaction with source-manifest verification | Planned |
 | G8 | GitHub `main` protection and required CI status checks | Repository setting required |
 | G9 | End-to-end reproducible evidence bundle and recovery verification | Planned |
 
 ## Dependency rules
 
-- Do not schedule or promote the forecast-weather path merely because ingestion, comparison, monitoring, or candidate registration support exists.
+- Do not schedule or promote the forecast-weather path merely because ingestion, comparison, monitoring, candidate registration, or lifecycle planning support exists.
 - Do not replace the observed-weather baseline; use it as the paired control.
 - Require reconciliation, promotion assessment, representative provider-health evidence, and an explicit reviewed candidate history before any controlled trial.
 - An `approved` registry state is evidence approval only; it never authorizes deployment or changes the active model.
+- Lifecycle planning is non-mutating. Any file move must use a separate explicit, reversible, hash-verifying command.
+- Unclassified evidence is retained by default, and protected candidate histories block lifecycle changes to referenced evidence.
 - Keep credentials outside the repository and prohibit live calls in CI.
 - Review quota, retention, capacity, and failure behaviour before enabling a recurring forecast trigger.
 - Keep comparison predictions and metrics separate from the ordinary baseline tables.

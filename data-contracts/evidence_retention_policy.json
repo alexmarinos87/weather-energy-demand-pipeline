@@ -1,0 +1,215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_version": "evidence-retention-policy-v1",
+  "description": "Dry-run-first local evidence lifecycle policy. Non-retain actions are recommendations only until a separate explicit apply workflow is used.",
+  "excluded_prefixes": [
+    "lifecycle/",
+    "quarantine/"
+  ],
+  "protected_candidate_states": [
+    "review_requested",
+    "approved"
+  ],
+  "unclassified_action": "retain",
+  "categories": [
+    {
+      "category": "model_registry",
+      "patterns": ["model-registry/**"],
+      "retention_days": null,
+      "min_keep_latest": 0,
+      "compact_after_days": null,
+      "compaction_formats": [],
+      "min_compaction_files": 0,
+      "max_compaction_source_bytes": 0,
+      "always_protect": true
+    },
+    {
+      "category": "raw_forecast_weather",
+      "patterns": ["raw/forecast_weather/**"],
+      "retention_days": 90,
+      "min_keep_latest": 20,
+      "compact_after_days": null,
+      "compaction_formats": [],
+      "min_compaction_files": 0,
+      "max_compaction_source_bytes": 0,
+      "always_protect": false
+    },
+    {
+      "category": "normalized_forecast_weather",
+      "patterns": ["normalized/forecast_weather/**"],
+      "retention_days": 365,
+      "min_keep_latest": 40,
+      "compact_after_days": 14,
+      "compaction_formats": [".csv", ".parquet", ".pq"],
+      "min_compaction_files": 5,
+      "max_compaction_source_bytes": 16777216,
+      "always_protect": false
+    },
+    {
+      "category": "forecast_reconciliation_rows",
+      "patterns": ["reconciliation/forecast_weather/forecast_weather_reconciliation_*"],
+      "retention_days": 365,
+      "min_keep_latest": 20,
+      "compact_after_days": 30,
+      "compaction_formats": [".csv", ".parquet", ".pq"],
+      "min_compaction_files": 5,
+      "max_compaction_source_bytes": 16777216,
+      "always_protect": false
+    },
+    {
+      "category": "forecast_reconciliation_metrics",
+      "patterns": ["reconciliation/forecast_weather/forecast_weather_quality_metrics_*"],
+      "retention_days": 730,
+      "min_keep_latest": 40,
+      "compact_after_days": 60,
+      "compaction_formats": [".csv", ".parquet", ".pq"],
+      "min_compaction_files": 10,
+      "max_compaction_source_bytes": 8388608,
+      "always_protect": false
+    },
+    {
+      "category": "weather_comparison_predictions",
+      "patterns": [
+        "forecasting/weather_comparison_predictions*",
+        "forecasting/rolling_origin_weather_comparison_predictions*"
+      ],
+      "retention_days": 365,
+      "min_keep_latest": 20,
+      "compact_after_days": 30,
+      "compaction_formats": [".csv", ".parquet", ".pq"],
+      "min_compaction_files": 5,
+      "max_compaction_source_bytes": 16777216,
+      "always_protect": false
+    },
+    {
+      "category": "weather_comparison_metrics",
+      "patterns": [
+        "forecasting/weather_comparison_metrics*",
+        "forecasting/rolling_origin_weather_comparison_metrics*"
+      ],
+      "retention_days": 730,
+      "min_keep_latest": 40,
+      "compact_after_days": 60,
+      "compaction_formats": [".csv", ".parquet", ".pq"],
+      "min_compaction_files": 10,
+      "max_compaction_source_bytes": 8388608,
+      "always_protect": false
+    },
+    {
+      "category": "baseline_predictions",
+      "patterns": [
+        "forecasting/baseline_predictions*",
+        "forecasting/rolling_origin_predictions*"
+      ],
+      "retention_days": 180,
+      "min_keep_latest": 20,
+      "compact_after_days": 30,
+      "compaction_formats": [".csv", ".parquet", ".pq"],
+      "min_compaction_files": 5,
+      "max_compaction_source_bytes": 16777216,
+      "always_protect": false
+    },
+    {
+      "category": "baseline_metrics",
+      "patterns": [
+        "forecasting/baseline_metrics*",
+        "forecasting/rolling_origin_metrics*"
+      ],
+      "retention_days": 365,
+      "min_keep_latest": 40,
+      "compact_after_days": 60,
+      "compaction_formats": [".csv", ".parquet", ".pq"],
+      "min_compaction_files": 10,
+      "max_compaction_source_bytes": 8388608,
+      "always_protect": false
+    },
+    {
+      "category": "promotion_checks",
+      "patterns": ["promotion/target_weather/target_weather_promotion_checks_*"],
+      "retention_days": 730,
+      "min_keep_latest": 40,
+      "compact_after_days": 60,
+      "compaction_formats": [".csv", ".parquet", ".pq"],
+      "min_compaction_files": 10,
+      "max_compaction_source_bytes": 8388608,
+      "always_protect": false
+    },
+    {
+      "category": "promotion_summaries",
+      "patterns": ["promotion/target_weather/target_weather_promotion_summary_*"],
+      "retention_days": null,
+      "min_keep_latest": 0,
+      "compact_after_days": null,
+      "compaction_formats": [],
+      "min_compaction_files": 0,
+      "max_compaction_source_bytes": 0,
+      "always_protect": true
+    },
+    {
+      "category": "provider_health_checks",
+      "patterns": ["monitoring/forecast_provider/forecast_provider_health_checks_*"],
+      "retention_days": 730,
+      "min_keep_latest": 40,
+      "compact_after_days": 60,
+      "compaction_formats": [".csv", ".parquet", ".pq"],
+      "min_compaction_files": 10,
+      "max_compaction_source_bytes": 8388608,
+      "always_protect": false
+    },
+    {
+      "category": "provider_health_summaries",
+      "patterns": ["monitoring/forecast_provider/forecast_provider_health_summary_*"],
+      "retention_days": null,
+      "min_keep_latest": 0,
+      "compact_after_days": null,
+      "compaction_formats": [],
+      "min_compaction_files": 0,
+      "max_compaction_source_bytes": 0,
+      "always_protect": true
+    },
+    {
+      "category": "raw_current_weather",
+      "patterns": ["raw/weather/**"],
+      "retention_days": 90,
+      "min_keep_latest": 20,
+      "compact_after_days": null,
+      "compaction_formats": [],
+      "min_compaction_files": 0,
+      "max_compaction_source_bytes": 0,
+      "always_protect": false
+    },
+    {
+      "category": "raw_energy",
+      "patterns": ["raw/energy/**"],
+      "retention_days": 90,
+      "min_keep_latest": 20,
+      "compact_after_days": null,
+      "compaction_formats": [],
+      "min_compaction_files": 0,
+      "max_compaction_source_bytes": 0,
+      "always_protect": false
+    },
+    {
+      "category": "silver_weather",
+      "patterns": ["silver/weather/**"],
+      "retention_days": 365,
+      "min_keep_latest": 20,
+      "compact_after_days": 30,
+      "compaction_formats": [".csv", ".parquet", ".pq"],
+      "min_compaction_files": 5,
+      "max_compaction_source_bytes": 16777216,
+      "always_protect": false
+    },
+    {
+      "category": "silver_energy",
+      "patterns": ["silver/energy/**"],
+      "retention_days": 365,
+      "min_keep_latest": 20,
+      "compact_after_days": 30,
+      "compaction_formats": [".csv", ".parquet", ".pq"],
+      "min_compaction_files": 5,
+      "max_compaction_source_bytes": 16777216,
+      "always_protect": false
+    }
+  ]
+}
