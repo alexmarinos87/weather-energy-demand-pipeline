@@ -15,7 +15,7 @@ The repository is developed in dependency order. Each goal is one bounded PR, va
 | G7c | Schema-compatible compacted shadow outputs with source-manifest verification and no source replacement | Implemented |
 | G8 | GitHub `main` protection and required CI status checks | Repository setting required |
 | G9 | Deterministic approved-candidate evidence bundle, safe archive verification, clean recovery, and recovery re-verification | Implemented |
-| G10 | Controlled live Fabric pilot with reviewed credentials, capacity boundary, rollback plan, and post-run evidence | Next operational goal |
+| G10 | Controlled live Fabric pilot with reviewed credentials, capacity boundary, rollback plan, and post-run evidence | Next |
 
 ## Dependency rules
 
