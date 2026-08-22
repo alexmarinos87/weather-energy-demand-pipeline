@@ -1,8 +1,9 @@
 """Hardened public API for reproducible evidence bundles.
 
 The implementation lives in :mod:`forecasting._evidence_bundle_impl`. This
-facade performs lexical, symlink-aware preflight before delegating so an
-absolute path cannot lose its link identity through an early ``resolve()``.
+facade preserves the established public API while performing lexical,
+symlink-aware source preflight before delegation. An absolute source path must
+not lose its link identity through an early ``resolve()``.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from . import _evidence_bundle_impl as _impl
 EvidenceBundleError = _impl.EvidenceBundleError
 verify_evidence_bundle = _impl.verify_evidence_bundle
 recover_evidence_bundle = _impl.recover_evidence_bundle
+verify_recovered_bundle = _impl.verify_recovered_bundle
 
 
 def _lexical_relative_under(root: Path, value: Any, name: str) -> Path:
@@ -79,24 +81,22 @@ def _preflight_directory(root: Path, value: Any, name: str) -> None:
 
 def create_evidence_bundle(
     data_root: Path,
-    candidate_directory: Path,
+    candidate_dir: Path,
     role_paths: dict[str, Path],
     *,
-    output_root: Path,
-    repository: str,
-    code_commit_sha: str,
-    code_tree_sha: str,
+    extra_paths: Iterable[Path] = (),
     actor: str,
     reason: str,
-    extra_paths: Iterable[Path] = (),
     created_at_utc: Any | None = None,
+    output_root: Path | None = None,
+    max_bundle_bytes: int = 536_870_912,
 ):
-    """Create a bundle only after every supplied source passes link-safe preflight."""
+    """Create a bundle only after every source passes link-safe preflight."""
     root = _impl._root(data_root, "data_root")
     roles = dict(role_paths)
     extras = tuple(extra_paths)
 
-    _preflight_directory(root, candidate_directory, "candidate_directory")
+    _preflight_directory(root, candidate_dir, "candidate_dir")
     for role, path in roles.items():
         _preflight_file(root, path, f"{role}_path")
     for index, path in enumerate(extras, start=1):
@@ -104,16 +104,14 @@ def create_evidence_bundle(
 
     return _impl.create_evidence_bundle(
         data_root,
-        candidate_directory,
+        candidate_dir,
         roles,
-        output_root=output_root,
-        repository=repository,
-        code_commit_sha=code_commit_sha,
-        code_tree_sha=code_tree_sha,
+        extra_paths=extras,
         actor=actor,
         reason=reason,
-        extra_paths=extras,
         created_at_utc=created_at_utc,
+        output_root=output_root,
+        max_bundle_bytes=max_bundle_bytes,
     )
 
 
@@ -122,4 +120,5 @@ __all__ = [
     "create_evidence_bundle",
     "recover_evidence_bundle",
     "verify_evidence_bundle",
+    "verify_recovered_bundle",
 ]
