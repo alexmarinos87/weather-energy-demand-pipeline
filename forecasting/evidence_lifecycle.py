@@ -336,9 +336,12 @@ def plan_evidence_lifecycle(
         lambda value: _protection(value, references)
     )
     plan["protected_by_candidate"] = plan["candidate_protection_reason"].notna()
+    compact_after_days = pd.to_numeric(
+        plan["compact_after_days"], errors="coerce"
+    ).astype(float)
     compactable = (
         plan["compact_after_days"].notna()
-        & (plan["age_days"] > plan["compact_after_days"].fillna(float("inf")))
+        & (plan["age_days"] > compact_after_days.fillna(float("inf")))
         & plan.apply(
             lambda row: row["suffix"] in set(row["compaction_formats"]), axis=1
         )

@@ -15,6 +15,14 @@ from forecasting.evidence_lifecycle import (
     load_retention_policy,
     plan_evidence_lifecycle,
 )
+from forecasting.evidence_quarantine import (
+    EvidenceQuarantineError,
+    load_quarantine_manifest,
+    prepare_quarantine_candidates,
+    quarantine_evidence,
+    restore_evidence,
+    verify_quarantine_state,
+)
 from forecasting.forecast_weather import (
     ForecastWeatherConfig,
     ForecastWeatherContractError,
@@ -65,6 +73,7 @@ from forecasting.weather_reconciliation import (
 __all__ = [
     "BacktestConfig",
     "EvidenceLifecycleError",
+    "EvidenceQuarantineError",
     "ForecastProviderMonitoringConfig",
     "ForecastProviderMonitoringError",
     "ForecastWeatherConfig",
@@ -85,6 +94,7 @@ __all__ = [
     "inventory_evidence",
     "load_candidate_history",
     "load_protected_candidate_references",
+    "load_quarantine_manifest",
     "load_retention_policy",
     "monitor_forecast_provider_health",
     "plan_evidence_lifecycle",
@@ -94,16 +104,20 @@ __all__ = [
     "prepare_forecast_snapshot_evidence",
     "prepare_forecast_weather_frame",
     "prepare_observed_weather_input",
+    "prepare_quarantine_candidates",
     "prepare_reconciliation_history",
     "prepare_reconciliation_metrics",
     "prepare_weather_model_comparison",
+    "quarantine_evidence",
     "reconcile_forecast_weather",
     "register_candidate",
+    "restore_evidence",
     "run_chronological_backtest",
     "run_rolling_origin_backtest",
     "run_weather_model_comparison",
     "transition_candidate",
     "verify_candidate_history",
     "verify_manifest",
+    "verify_quarantine_state",
     "write_candidate_revision",
 ]
