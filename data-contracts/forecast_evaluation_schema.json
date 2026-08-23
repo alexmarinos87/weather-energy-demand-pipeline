@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "forecast_evaluation_prediction_v3",
-  "description": "Prediction evidence for purged 30/60-minute demand backtests with bounded target matching.",
+  "title": "forecast_evaluation_prediction_v4",
+  "description": "Prediction evidence for purged 30/60-minute demand backtests with bounded target matching and explicit UTC or UK-local calendar feature contracts.",
   "type": "object",
   "required": [
     "run_id",
@@ -47,7 +47,10 @@
     "absolute_error_mw": {"type": "number", "minimum": 0},
     "squared_error_mw2": {"type": "number", "minimum": 0},
     "trained_through_utc": {"type": "string", "format": "date-time"},
-    "feature_contract_version": {"type": "string", "const": "time-horizon-v1"}
+    "feature_contract_version": {
+      "type": "string",
+      "enum": ["time-horizon-v1", "time-horizon-uk-calendar-v1"]
+    }
   },
   "additionalProperties": true
 }
