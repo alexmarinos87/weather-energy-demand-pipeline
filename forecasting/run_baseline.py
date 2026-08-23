@@ -14,6 +14,12 @@ from forecasting.baseline import (
     run_rolling_origin_backtest,
     run_weather_model_comparison,
 )
+from forecasting.contracts import (
+    DEFAULT_FEATURE_COLUMNS,
+    UK_LOCAL_FEATURE_COLUMNS,
+    UK_LOCAL_FEATURE_CONTRACT_VERSION,
+    UTC_FEATURE_CONTRACT_VERSION,
+)
 
 
 def _read_frame(path: Path) -> pd.DataFrame:
@@ -40,7 +46,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Run leakage-safe 30/60-minute demand baselines or a paired "
-            "observed-versus-target-weather model comparison."
+            "observed-versus-target-weather model comparison with UTC or "
+            "Europe/London calendar features."
         )
     )
     source = parser.add_mutually_exclusive_group(required=True)
@@ -53,6 +60,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", type=Path, default=Path("data/forecasting"))
     parser.add_argument(
         "--output-format", choices=("csv", "parquet"), default="csv"
+    )
+    parser.add_argument(
+        "--calendar-mode",
+        choices=("utc", "uk-local"),
+        default="utc",
+        help=(
+            "Keep the established UTC calendar baseline by default, or use "
+            "Europe/London hour/day/weekend plus UTC offset and DST evidence."
+        ),
     )
     parser.add_argument(
         "--model-set",
@@ -131,15 +147,34 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _calendar_contract(calendar_mode: str) -> tuple[tuple[str, ...], str, str]:
+    if calendar_mode == "uk-local":
+        return (
+            tuple(UK_LOCAL_FEATURE_COLUMNS),
+            UK_LOCAL_FEATURE_CONTRACT_VERSION,
+            "_uk_local_calendar",
+        )
+    return (
+        tuple(DEFAULT_FEATURE_COLUMNS),
+        UTC_FEATURE_CONTRACT_VERSION,
+        "",
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     frame = build_demo_feature_frame() if args.demo else _read_frame(args.input)
+    feature_columns, feature_contract_version, output_suffix = _calendar_contract(
+        args.calendar_mode
+    )
     backtest_config = BacktestConfig(
         ridge_alpha=args.ridge_alpha,
         horizon_minutes=tuple(args.horizon_minutes),
         target_tolerance_minutes=args.target_tolerance_minutes,
         min_target_coverage=args.min_target_coverage,
+        feature_columns=feature_columns,
+        feature_contract_version=feature_contract_version,
     )
 
     if args.model_set == "weather-comparison":
@@ -195,6 +230,7 @@ def main(argv: list[str] | None = None) -> int:
                 config=backtest_config,
             )
             output_prefix = "baseline"
+    output_prefix += output_suffix
 
     predictions_path = _write_frame(
         predictions,
@@ -222,6 +258,7 @@ def main(argv: list[str] | None = None) -> int:
         "forecast_weather_coverage_pct",
         "mae_mw",
         "rmse_mw",
+        "feature_contract_version",
     ):
         if column in metrics.columns:
             summary_columns.append(column)

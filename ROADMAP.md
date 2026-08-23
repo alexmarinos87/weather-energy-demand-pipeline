@@ -28,19 +28,18 @@ checks pass.
 | G15 | Fully pinned Python 3.11/Linux transitive constraints used by CI and verified against the installed environment | Implemented |
 | G16 | Consolidated capability index and one-command credential-free local product demo with a hash-verified manifest | Implemented |
 | G17 | Four-area deterministic portfolio demo with manifest-bound resource/city identity and cross-area isolation evidence | Implemented |
-| G18 | UK local-time and daylight-saving-aware calendar feature contract with local/Fabric parity | Next |
-| G19 | Time-based previous-day and previous-week seasonal demand baselines with bounded source matching | Planned |
+| G18 | Europe/London calendar fields, explicit GMT/BST evidence, DST-transition tests, local model mode, and pandas/Fabric parity | Implemented |
+| G19 | Time-based previous-day and previous-week seasonal demand baselines with bounded source matching | Next |
 | G20 | Calibrated prediction intervals with empirical coverage and width evidence | Planned |
 
 ## Product-quality sequence
 
 The next product-quality work should proceed in this order:
 
-1. Add Europe/London local calendar features while retaining UTC timestamps as the canonical event identity.
-2. Compare UTC-only and UK-local calendar ridge features across winter, BST, and daylight-saving transitions.
-3. Add elapsed-time previous-day and previous-week seasonal baselines; do not assume a fixed row cadence.
-4. Add calibration-only uncertainty intervals after the point baselines and target contracts are stable.
-5. Extend the multi-area portfolio demo only after each new capability has an independently tested contract.
+1. Add elapsed-time previous-day and previous-week seasonal baselines; do not assume a fixed row cadence.
+2. Compare persistence, seasonal, UTC-calendar ridge, and UK-local-calendar ridge evidence by area and horizon.
+3. Add calibration-only uncertainty intervals after the point baselines and target contracts are stable.
+4. Extend the multi-area portfolio demo only after each new capability has an independently tested contract.
 
 ## Dependency rules
 
@@ -99,6 +98,8 @@ The next product-quality work should proceed in this order:
 - UTC remains the canonical event and target timestamp. UK-local calendar fields
   are derived features only and must expose their timezone and daylight-saving
   offset explicitly.
+- UTC and UK-local model runs must use distinct feature-contract versions and
+  output names so one cannot silently overwrite or masquerade as the other.
 - Seasonal baselines must match by elapsed time with a tolerance and coverage
   contract; fixed row offsets are not an acceptable proxy for one day or week.
 - Prediction intervals must be calibrated on evidence unavailable to model

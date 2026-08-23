@@ -1,12 +1,27 @@
 """Public compatibility surface for leakage-safe baseline forecasting."""
 
+from forecasting.calendar_features import (
+    CALENDAR_FEATURE_CONTRACT_VERSION,
+    LOCAL_CALENDAR_COLUMNS,
+    UK_LOCAL_TIMEZONE,
+    UTC_CALENDAR_COLUMNS,
+    CalendarFeatureError,
+    add_uk_local_calendar_features,
+)
 from forecasting.contracts import (
+    DEFAULT_FEATURE_COLUMNS,
+    UK_LOCAL_FEATURE_COLUMNS,
+    UK_LOCAL_FEATURE_CONTRACT_VERSION,
+    UTC_FEATURE_CONTRACT_VERSION,
     BacktestConfig,
     ForecastingContractError,
     build_supervised_frame,
     prepare_feature_frame,
 )
-from forecasting.demo import build_demo_feature_frame
+from forecasting.demo import (
+    build_demo_feature_frame,
+    build_multi_area_demo_feature_frame,
+)
 from forecasting.evaluation import run_chronological_backtest
 from forecasting.evidence_bundle import (
     EvidenceBundleError,
@@ -104,6 +119,9 @@ from forecasting.weather_reconciliation import (
 
 __all__ = [
     "BacktestConfig",
+    "CALENDAR_FEATURE_CONTRACT_VERSION",
+    "CalendarFeatureError",
+    "DEFAULT_FEATURE_COLUMNS",
     "EvidenceBundleError",
     "EvidenceCompactionError",
     "EvidenceLifecycleError",
@@ -117,15 +135,23 @@ __all__ = [
     "ForecastWeatherReconciliationConfig",
     "ForecastWeatherReconciliationError",
     "ForecastingContractError",
+    "LOCAL_CALENDAR_COLUMNS",
     "ModelCandidateRegistryError",
     "RollingOriginFold",
     "TargetWeatherPromotionError",
     "TargetWeatherPromotionPolicy",
+    "UK_LOCAL_FEATURE_COLUMNS",
+    "UK_LOCAL_FEATURE_CONTRACT_VERSION",
+    "UK_LOCAL_TIMEZONE",
+    "UTC_CALENDAR_COLUMNS",
+    "UTC_FEATURE_CONTRACT_VERSION",
+    "add_uk_local_calendar_features",
     "assess_fabric_pilot_preflight",
     "assess_target_weather_promotion",
     "attach_target_forecast_weather",
     "build_demo_feature_frame",
     "build_demo_forecast_weather_frame",
+    "build_multi_area_demo_feature_frame",
     "build_rolling_origin_folds",
     "build_supervised_frame",
     "create_evidence_bundle",

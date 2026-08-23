@@ -107,6 +107,10 @@ spark.sql(
         SELECT
             event_timestamp_utc,
             event_date_utc,
+            from_utc_timestamp(
+                event_timestamp_utc,
+                'Europe/London'
+            ) AS event_timestamp_local,
             source_area,
             source_area_name,
             city,
@@ -140,6 +144,8 @@ spark.sql(
         SELECT
             event_timestamp_utc,
             event_date_utc,
+            event_timestamp_local,
+            CAST(event_timestamp_local AS DATE) AS event_date_local,
             source_area,
             source_area_name,
             city,
@@ -161,11 +167,40 @@ spark.sql(
             weather_description,
             weather_age_minutes,
             HOUR(event_timestamp_utc) AS hour_of_day_utc,
-            DAYOFWEEK(event_timestamp_utc) AS day_of_week_utc,
+            pmod(DAYOFWEEK(event_timestamp_utc) + 5, 7) + 1
+                AS day_of_week_utc,
             CASE
-                WHEN DAYOFWEEK(event_timestamp_utc) IN (1, 7) THEN 1
+                WHEN pmod(DAYOFWEEK(event_timestamp_utc) + 5, 7) + 1
+                     IN (6, 7) THEN 1
                 ELSE 0
             END AS is_weekend_utc,
+            HOUR(event_timestamp_local) AS hour_of_day_local,
+            pmod(DAYOFWEEK(event_timestamp_local) + 5, 7) + 1
+                AS day_of_week_local,
+            CASE
+                WHEN pmod(DAYOFWEEK(event_timestamp_local) + 5, 7) + 1
+                     IN (6, 7) THEN 1
+                ELSE 0
+            END AS is_weekend_local,
+            CAST(
+                (
+                    unix_timestamp(event_timestamp_local)
+                    - unix_timestamp(event_timestamp_utc)
+                ) / 60
+                AS INT
+            ) AS local_utc_offset_minutes,
+            CASE
+                WHEN CAST(
+                    (
+                        unix_timestamp(event_timestamp_local)
+                        - unix_timestamp(event_timestamp_utc)
+                    ) / 60
+                    AS INT
+                ) = 60 THEN 1
+                ELSE 0
+            END AS is_dst_local,
+            'Europe/London' AS calendar_timezone,
+            'uk-local-calendar-v1' AS calendar_feature_contract_version,
             temperature * temperature AS temperature_sq,
             LAG(demand_mw, 1) OVER (
                 PARTITION BY source_area, resource_id, city
@@ -190,6 +225,8 @@ spark.sql(
     SELECT
         event_timestamp_utc,
         event_date_utc,
+        event_timestamp_local,
+        event_date_local,
         source_area,
         source_area_name,
         city,
@@ -213,6 +250,13 @@ spark.sql(
         hour_of_day_utc,
         day_of_week_utc,
         is_weekend_utc,
+        hour_of_day_local,
+        day_of_week_local,
+        is_weekend_local,
+        local_utc_offset_minutes,
+        is_dst_local,
+        calendar_timezone,
+        calendar_feature_contract_version,
         temperature_sq,
         demand_lag_1,
         temperature_lag_1,
