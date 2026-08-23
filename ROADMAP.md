@@ -29,16 +29,18 @@ checks pass.
 | G16 | Consolidated capability index and one-command credential-free local product demo with a hash-verified manifest | Implemented |
 | G17 | Four-area deterministic portfolio demo with manifest-bound resource/city identity and cross-area isolation evidence | Implemented |
 | G18 | Europe/London calendar fields, explicit GMT/BST evidence, DST-transition tests, local model mode, and pandas/Fabric parity | Implemented |
-| G19 | Time-based previous-day and previous-week seasonal demand baselines with bounded source matching | Next |
-| G20 | Calibrated prediction intervals with empirical coverage and width evidence | Planned |
+| G19a | Elapsed-time previous-day and previous-week local baselines with tolerance, coverage, holdout, and rolling-origin evidence | Implemented |
+| G19b | Fabric parity for elapsed-time seasonal baseline comparison and independent quality checks | Next |
+| G20 | Calibration-only prediction intervals with empirical coverage and width evidence | Planned |
+| G21 | Multi-area portfolio-demo integration for independently validated seasonal and interval evidence | Planned |
 
 ## Product-quality sequence
 
 The next product-quality work should proceed in this order:
 
-1. Add elapsed-time previous-day and previous-week seasonal baselines; do not assume a fixed row cadence.
-2. Compare persistence, seasonal, UTC-calendar ridge, and UK-local-calendar ridge evidence by area and horizon.
-3. Add calibration-only uncertainty intervals after the point baselines and target contracts are stable.
+1. Add optional Fabric parity for the elapsed seasonal comparison without changing the ordinary baseline tables or schedule.
+2. Add calibration-only uncertainty intervals after the point baselines and target contracts are stable.
+3. Compare persistence, seasonal, UTC-calendar ridge, and UK-local-calendar ridge evidence by area and horizon.
 4. Extend the multi-area portfolio demo only after each new capability has an independently tested contract.
 
 ## Dependency rules
@@ -100,8 +102,10 @@ The next product-quality work should proceed in this order:
   offset explicitly.
 - UTC and UK-local model runs must use distinct feature-contract versions and
   output names so one cannot silently overwrite or masquerade as the other.
-- Seasonal baselines must match by elapsed time with a tolerance and coverage
-  contract; fixed row offsets are not an acceptable proxy for one day or week.
+- Seasonal baselines must match target-minus-period by elapsed UTC time with a
+  tolerance and coverage contract; fixed row offsets are not acceptable.
+- Previous-day and previous-week models must be scored on the same cohort and
+  training boundary as persistence and ridge controls.
 - Prediction intervals must be calibrated on evidence unavailable to model
   fitting and evaluated on later rows; test labels may not set interval width.
 
