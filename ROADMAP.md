@@ -31,7 +31,7 @@ checks pass.
 | G18 | Europe/London calendar fields, explicit GMT/BST evidence, DST-transition tests, local model mode, and pandas/Fabric parity | Implemented |
 | G19a | Elapsed-time previous-day and previous-week local baselines with tolerance, coverage, holdout, and rolling-origin evidence | Implemented |
 | G19b | Fabric parity for elapsed-time seasonal baseline comparison and independent quality checks | Next |
-| G20 | Calibration-only prediction intervals with empirical coverage and width evidence | Planned |
+| G20 | Calibration-only prediction intervals using causally available validation residuals, finite-sample ranks, and empirical test coverage/width evidence | Implemented locally |
 | G21 | Multi-area portfolio-demo integration for independently validated seasonal and interval evidence | Planned |
 
 ## Product-quality sequence
@@ -39,7 +39,7 @@ checks pass.
 The next product-quality work should proceed in this order:
 
 1. Add optional Fabric parity for the elapsed seasonal comparison without changing the ordinary baseline tables or schedule.
-2. Add calibration-only uncertainty intervals after the point baselines and target contracts are stable.
+2. Add optional Fabric parity for calibration-only intervals without using test labels for width.
 3. Compare persistence, seasonal, UTC-calendar ridge, and UK-local-calendar ridge evidence by area and horizon.
 4. Extend the multi-area portfolio demo only after each new capability has an independently tested contract.
 
@@ -106,8 +106,11 @@ The next product-quality work should proceed in this order:
   tolerance and coverage contract; fixed row offsets are not acceptable.
 - Previous-day and previous-week models must be scored on the same cohort and
   training boundary as persistence and ridge controls.
-- Prediction intervals must be calibrated on evidence unavailable to model
-  fitting and evaluated on later rows; test labels may not set interval width.
+- Prediction intervals must be calibrated on validation labels available before
+  the first test feature timestamp; overlapping validation labels and all test
+  labels are forbidden from setting interval width.
+- Interval coverage is retained as empirical evaluation evidence and must not be
+  presented as an unconditional guarantee under distribution shift.
 
 ## Reusable PR workflow
 
