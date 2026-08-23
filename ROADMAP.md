@@ -15,7 +15,7 @@ checks pass.
 | G7a | Content-hashed evidence inventory and dry-run retention, compaction, quarantine, and cost plan | Implemented |
 | G7b | Explicit reversible quarantine and hash-verified restore with no permanent deletion | Implemented |
 | G7c | Schema-compatible compacted shadow outputs with source-manifest verification and no source replacement | Implemented |
-| G8 | GitHub `main` protection and required CI status checks | Next repository setting; connector support required |
+| G8 | GitHub `main` protection and required CI status checks; connector support required | Next |
 | G9 | Deterministic approved-candidate evidence bundle, safe archive verification, clean recovery, and recovery re-verification | Implemented |
 | G10a | Immutable non-production Fabric pilot plan bound to approved candidate, verified bundle, verified recovery, code identity, limits, and rollback | Implemented |
 | G10b | Repository/environment preflight and time-bounded human pilot authorization | Implemented |
