@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "fabric_post_pilot_human_decision_v1",
+  "type": "object",
+  "required": [
+    "decision_id",
+    "decision_revision",
+    "pilot_id",
+    "candidate_id",
+    "candidate_revision",
+    "candidate_manifest_hash",
+    "candidate_state_at_decision",
+    "receipt_id",
+    "receipt_hash",
+    "assessment_id",
+    "assessment_hash",
+    "external_run_id",
+    "assessment_outcome",
+    "run_status",
+    "decision",
+    "decision_effect",
+    "decided_by",
+    "decision_role",
+    "review_ticket",
+    "decision_reason",
+    "follow_up_actions",
+    "revision_requirements",
+    "retirement_reason",
+    "decided_at_utc",
+    "human_decision_confirmed",
+    "automatic_decision_used",
+    "registry_mutation_performed",
+    "new_pilot_authorized",
+    "schedule_activation_allowed",
+    "deployment_authorized",
+    "model_activation_authorized",
+    "automatic_model_activation_allowed",
+    "active_model_unchanged",
+    "source_evidence_mutated",
+    "follow_up_human_action_required",
+    "decision_contract_version",
+    "decision_hash"
+  ],
+  "properties": {
+    "decision_id": {"type": "string", "pattern": "^fpd-[0-9a-f]{24}$"},
+    "decision_revision": {"const": 1},
+    "pilot_id": {"type": "string", "pattern": "^fpl-[0-9a-f]{24}$"},
+    "candidate_id": {"type": "string", "pattern": "^twc-[0-9a-f]{24}$"},
+    "candidate_revision": {"type": "integer", "minimum": 1},
+    "candidate_manifest_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "candidate_state_at_decision": {"const": "approved"},
+    "receipt_id": {"type": "string", "pattern": "^fpr-[0-9a-f]{24}$"},
+    "receipt_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "assessment_id": {"type": "string", "pattern": "^fra-[0-9a-f]{24}$"},
+    "assessment_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "external_run_id": {"type": "string", "minLength": 1},
+    "assessment_outcome": {
+      "enum": ["eligible_for_post_pilot_review", "pilot_failed"]
+    },
+    "run_status": {"enum": ["completed", "failed", "aborted", "rolled_back"]},
+    "decision": {
+      "enum": ["continue_evidence_collection", "revise_candidate", "retire_candidate"]
+    },
+    "decision_effect": {
+      "enum": ["new_pilot_plan_required", "new_candidate_required", "registry_retirement_required"]
+    },
+    "decided_by": {"type": "string", "minLength": 1},
+    "decision_role": {"type": "string", "minLength": 1},
+    "review_ticket": {"type": "string", "minLength": 1},
+    "decision_reason": {"type": "string", "minLength": 1},
+    "follow_up_actions": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "revision_requirements": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "retirement_reason": {"type": ["string", "null"], "minLength": 1},
+    "decided_at_utc": {"type": "string", "format": "date-time"},
+    "human_decision_confirmed": {"const": true},
+    "automatic_decision_used": {"const": false},
+    "registry_mutation_performed": {"const": false},
+    "new_pilot_authorized": {"const": false},
+    "schedule_activation_allowed": {"const": false},
+    "deployment_authorized": {"const": false},
+    "model_activation_authorized": {"const": false},
+    "automatic_model_activation_allowed": {"const": false},
+    "active_model_unchanged": {"const": true},
+    "source_evidence_mutated": {"const": false},
+    "follow_up_human_action_required": {"const": true},
+    "decision_contract_version": {"const": "fabric-post-pilot-human-decision-v1"},
+    "decision_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"decision": {"const": "continue_evidence_collection"}}},
+      "then": {
+        "properties": {
+          "decision_effect": {"const": "new_pilot_plan_required"},
+          "assessment_outcome": {"const": "eligible_for_post_pilot_review"},
+          "run_status": {"const": "completed"},
+          "revision_requirements": {"maxItems": 0},
+          "retirement_reason": {"type": "null"}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"decision": {"const": "revise_candidate"}}},
+      "then": {
+        "properties": {
+          "decision_effect": {"const": "new_candidate_required"},
+          "revision_requirements": {"minItems": 1},
+          "retirement_reason": {"type": "null"}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"decision": {"const": "retire_candidate"}}},
+      "then": {
+        "properties": {
+          "decision_effect": {"const": "registry_retirement_required"},
+          "revision_requirements": {"maxItems": 0},
+          "retirement_reason": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  ],
+  "additionalProperties": true
+}
