@@ -142,7 +142,11 @@ def test_models_and_horizons_are_calibrated_independently():
         [
             point_predictions(model_name="ridge_weather_lag", horizon=30),
             point_predictions(model_name="seasonal_previous_week", horizon=30),
-            point_predictions(model_name="ridge_weather_lag", horizon=60),
+            point_predictions(
+                model_name="ridge_weather_lag",
+                horizon=60,
+                validation_rows=36,
+            ),
         ],
         ignore_index=True,
     )
