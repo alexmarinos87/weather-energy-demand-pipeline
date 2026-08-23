@@ -1,13 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "portfolio_demo_manifest_v1",
+  "title": "portfolio_demo_manifest_v2",
   "type": "object",
   "required": [
     "demo_run_id",
     "demo_run_timestamp_utc",
     "source_mode",
     "output_format",
+    "source_area_contract_version",
     "source_groups",
+    "source_bindings",
     "demand_horizons_minutes",
     "baseline_models",
     "comparison_models",
@@ -26,12 +28,37 @@
     "demo_run_timestamp_utc": {"type": "string", "format": "date-time"},
     "source_mode": {"const": "deterministic_credential_free_demo"},
     "output_format": {"enum": ["csv", "parquet"]},
-    "source_groups": {"type": "integer", "minimum": 1},
+    "source_area_contract_version": {"type": "string", "minLength": 1},
+    "source_groups": {"const": 4},
+    "source_bindings": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": ["source_area", "resource_id", "city"],
+        "properties": {
+          "source_area": {
+            "enum": [
+              "east_midlands",
+              "south_wales",
+              "south_west",
+              "west_midlands"
+            ]
+          },
+          "resource_id": {"type": "string", "minLength": 1},
+          "city": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    },
     "demand_horizons_minutes": {
       "type": "array",
-      "minItems": 1,
+      "minItems": 2,
+      "maxItems": 2,
       "uniqueItems": true,
-      "items": {"type": "integer", "minimum": 1}
+      "items": {"enum": [30, 60]}
     },
     "baseline_models": {
       "type": "array",
@@ -47,7 +74,8 @@
     },
     "artifacts": {
       "type": "array",
-      "minItems": 11,
+      "minItems": 12,
+      "maxItems": 12,
       "uniqueItems": true,
       "items": {
         "type": "object",
@@ -76,7 +104,7 @@
     "schedule_activation_performed": {"const": false},
     "model_promotion_performed": {"const": false},
     "external_publication_performed": {"const": false},
-    "manifest_contract_version": {"const": "portfolio-demo-manifest-v1"},
+    "manifest_contract_version": {"const": "portfolio-demo-manifest-v2"},
     "manifest_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
   },
   "additionalProperties": true

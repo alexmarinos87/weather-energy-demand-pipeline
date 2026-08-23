@@ -16,19 +16,27 @@ from forecasting.demand_weather_report import (
     DemandWeatherAnalysisConfig,
     build_demand_weather_analysis,
 )
-from forecasting.demo import build_demo_feature_frame
+from forecasting.demo import build_multi_area_demo_feature_frame
 from forecasting.evaluation import run_chronological_backtest
 from forecasting.forecast_weather import (
     ForecastWeatherConfig,
     build_demo_forecast_weather_frame,
 )
 from forecasting.weather_comparison import run_weather_model_comparison
+from ingestion.common.source_area import load_source_area_contract
 
 
-MANIFEST_CONTRACT_VERSION = "portfolio-demo-manifest-v1"
+MANIFEST_CONTRACT_VERSION = "portfolio-demo-manifest-v2"
 DEMO_RUN_ID_PATTERN = re.compile(r"^pdm-[0-9a-f]{24}$")
+EXPECTED_SOURCE_AREAS = {
+    "east_midlands",
+    "south_wales",
+    "south_west",
+    "west_midlands",
+}
 EXPECTED_ARTIFACT_ROLES = {
     "demo_features",
+    "demo_source_area_summary",
     "demo_forecast_weather",
     "baseline_predictions",
     "baseline_metrics",
@@ -162,19 +170,72 @@ def _artifact(
     }
 
 
-def _read_row_count(path: Path) -> int:
+def _read_frame(path: Path) -> pd.DataFrame:
     if path.suffix.lower() == ".csv":
-        return int(len(pd.read_csv(path)))
+        return pd.read_csv(path)
     if path.suffix.lower() == ".parquet":
-        return int(len(pd.read_parquet(path)))
-    raise PortfolioDemoError(f"Cannot count rows for {path.name}.")
+        return pd.read_parquet(path)
+    raise PortfolioDemoError(f"Cannot read tabular artifact {path.name}.")
+
+
+def _read_row_count(path: Path) -> int:
+    return int(len(_read_frame(path)))
+
+
+def _binding_tuple(binding: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(binding.get("source_area", "")),
+        str(binding.get("resource_id", "")),
+        str(binding.get("city", "")),
+    )
+
+
+def _validate_source_bindings(manifest: dict[str, Any]) -> list[dict[str, str]]:
+    contract_version = manifest.get("source_area_contract_version")
+    if not isinstance(contract_version, str) or not contract_version.strip():
+        raise PortfolioDemoError(
+            "Portfolio demo source-area contract version is missing."
+        )
+    bindings = manifest.get("source_bindings")
+    if not isinstance(bindings, list) or len(bindings) != 4:
+        raise PortfolioDemoError(
+            "Portfolio demo must contain four source-area bindings."
+        )
+    normalized: list[dict[str, str]] = []
+    for binding in bindings:
+        if not isinstance(binding, dict):
+            raise PortfolioDemoError("Portfolio demo source binding must be an object.")
+        source_area, resource_id, city = _binding_tuple(binding)
+        if not source_area or not resource_id or not city:
+            raise PortfolioDemoError(
+                "Portfolio demo source bindings require area, resource, and city."
+            )
+        normalized.append(
+            {
+                "source_area": source_area,
+                "resource_id": resource_id,
+                "city": city,
+            }
+        )
+    tuples = [_binding_tuple(binding) for binding in normalized]
+    if len(set(tuples)) != len(tuples):
+        raise PortfolioDemoError("Portfolio demo source bindings are duplicated.")
+    if {binding["source_area"] for binding in normalized} != EXPECTED_SOURCE_AREAS:
+        raise PortfolioDemoError(
+            "Portfolio demo source bindings do not cover all contracted areas."
+        )
+    if manifest.get("source_groups") != len(normalized):
+        raise PortfolioDemoError(
+            "Portfolio demo source group count does not match its bindings."
+        )
+    return sorted(normalized, key=_binding_tuple)
 
 
 def verify_portfolio_demo_manifest(
     manifest: dict[str, Any],
     run_directory: Path,
 ) -> None:
-    """Verify immutable artifact identities and the no-side-effect demo boundary."""
+    """Verify immutable artifacts, spatial isolation, and no-side-effect flags."""
     if not isinstance(manifest, dict):
         raise PortfolioDemoError("Portfolio demo manifest must be a JSON object.")
     run_id = str(manifest.get("demo_run_id", ""))
@@ -192,6 +253,7 @@ def verify_portfolio_demo_manifest(
     output_format = manifest.get("output_format")
     if output_format not in {"csv", "parquet"}:
         raise PortfolioDemoError("Portfolio demo output format is invalid.")
+    bindings = _validate_source_bindings(manifest)
     safety = {
         "credential_free": True,
         "live_source_calls_performed": False,
@@ -224,6 +286,7 @@ def verify_portfolio_demo_manifest(
     if set(roles) != EXPECTED_ARTIFACT_ROLES or len(roles) != len(set(roles)):
         raise PortfolioDemoError("Portfolio demo artifact roles are incomplete or duplicated.")
     run_directory = Path(run_directory)
+    by_role: dict[str, Path] = {}
     for artifact in artifacts:
         relative = Path(str(artifact.get("relative_path", "")))
         if relative.is_absolute() or len(relative.parts) != 1:
@@ -245,6 +308,74 @@ def verify_portfolio_demo_manifest(
             raise PortfolioDemoError(
                 f"Portfolio demo artifact row count changed: {relative}."
             )
+        by_role[str(artifact["artifact_role"])] = path
+
+    features = _read_frame(by_role["demo_features"])
+    required = {"source_area", "resource_id", "city", "event_timestamp_utc"}
+    if not required.issubset(features.columns):
+        raise PortfolioDemoError("Portfolio demo features lack spatial identity.")
+    feature_bindings = sorted(
+        [
+            {
+                "source_area": str(row.source_area),
+                "resource_id": str(row.resource_id),
+                "city": str(row.city),
+            }
+            for row in features[
+                ["source_area", "resource_id", "city"]
+            ].drop_duplicates().itertuples(index=False)
+        ],
+        key=_binding_tuple,
+    )
+    if feature_bindings != bindings:
+        raise PortfolioDemoError(
+            "Portfolio demo feature groups do not match manifest source bindings."
+        )
+    if features.duplicated(
+        subset=["source_area", "resource_id", "city", "event_timestamp_utc"],
+        keep=False,
+    ).any():
+        raise PortfolioDemoError(
+            "Portfolio demo contains duplicate group/timestamp identities."
+        )
+    summary = _read_frame(by_role["demo_source_area_summary"])
+    if set(summary["source_area"].astype(str)) != EXPECTED_SOURCE_AREAS:
+        raise PortfolioDemoError(
+            "Portfolio demo source-area summary is incomplete."
+        )
+    if len(summary) != 4 or (summary["observation_count"] < 1).any():
+        raise PortfolioDemoError(
+            "Portfolio demo source-area summary counts are invalid."
+        )
+
+
+def _source_area_summary(features: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for identity, group in features.groupby(
+        ["source_area", "resource_id", "city"], sort=True, dropna=False
+    ):
+        source_area, resource_id, city = identity
+        rows.append(
+            {
+                "source_area": source_area,
+                "resource_id": resource_id,
+                "city": city,
+                "observation_count": int(len(group)),
+                "observation_start_utc": group["event_timestamp_utc"].min(),
+                "observation_end_utc": group["event_timestamp_utc"].max(),
+                "demand_mean_mw": float(group["demand_mw"].mean()),
+                "demand_min_mw": float(group["demand_mw"].min()),
+                "demand_max_mw": float(group["demand_mw"].max()),
+                "temperature_mean_c": float(group["temperature"].mean()),
+                "humidity_mean_pct": float(group["humidity"].mean()),
+            }
+        )
+    summary = pd.DataFrame(rows)
+    if len(summary) != 4 or set(summary["source_area"]) != EXPECTED_SOURCE_AREAS:
+        raise PortfolioDemoError(
+            "The multi-area demo must summarize exactly four contracted areas."
+        )
+    return summary
 
 
 def run_portfolio_demo(
@@ -254,7 +385,7 @@ def run_portfolio_demo(
     run_id: str | None = None,
     run_timestamp: Any | None = None,
 ) -> tuple[dict[str, Any], Path]:
-    """Run the complete deterministic local product journey and stage it atomically."""
+    """Run the complete deterministic multi-area product journey atomically."""
     if output_format not in {"csv", "parquet"}:
         raise PortfolioDemoError("output_format must be csv or parquet.")
     run_id = run_id or "pdm-" + uuid4().hex[:24]
@@ -273,7 +404,19 @@ def run_portfolio_demo(
     temporary_directory.mkdir()
 
     try:
-        features = build_demo_feature_frame()
+        contract = load_source_area_contract()
+        features = build_multi_area_demo_feature_frame()
+        source_summary = _source_area_summary(features)
+        source_bindings = [
+            {
+                "source_area": str(row.source_area),
+                "resource_id": str(row.resource_id),
+                "city": str(row.city),
+            }
+            for row in source_summary[
+                ["source_area", "resource_id", "city"]
+            ].sort_values(["source_area", "resource_id", "city"]).itertuples(index=False)
+        ]
         forecast_weather = build_demo_forecast_weather_frame(
             features, horizon_minutes=(30, 60)
         )
@@ -314,6 +457,11 @@ def run_portfolio_demo(
 
         frame_outputs = [
             ("demo_features", "demo_features", features),
+            (
+                "demo_source_area_summary",
+                "demo_source_area_summary",
+                source_summary,
+            ),
             ("demo_forecast_weather", "demo_forecast_weather", forecast_weather),
             ("baseline_predictions", "baseline_predictions", baseline_predictions),
             ("baseline_metrics", "baseline_metrics", baseline_metrics),
@@ -378,9 +526,9 @@ def run_portfolio_demo(
             "demo_run_timestamp_utc": timestamp.isoformat(),
             "source_mode": "deterministic_credential_free_demo",
             "output_format": output_format,
-            "source_groups": int(
-                features.groupby(["source_area", "resource_id", "city"]).ngroups
-            ),
+            "source_area_contract_version": str(contract["contract_version"]),
+            "source_groups": len(source_bindings),
+            "source_bindings": source_bindings,
             "demand_horizons_minutes": sorted(
                 baseline_predictions["requested_horizon_minutes"]
                 .astype(int)

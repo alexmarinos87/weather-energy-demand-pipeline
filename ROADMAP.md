@@ -15,7 +15,7 @@ checks pass.
 | G7a | Content-hashed evidence inventory and dry-run retention, compaction, quarantine, and cost plan | Implemented |
 | G7b | Explicit reversible quarantine and hash-verified restore with no permanent deletion | Implemented |
 | G7c | Schema-compatible compacted shadow outputs with source-manifest verification and no source replacement | Implemented |
-| G8 | GitHub `main` protection and required CI status checks; connector support required | Next |
+| G8 | GitHub `main` protection and required CI status checks | External repository setting required; connector write unavailable |
 | G9 | Deterministic approved-candidate evidence bundle, safe archive verification, clean recovery, and recovery re-verification | Implemented |
 | G10a | Immutable non-production Fabric pilot plan bound to approved candidate, verified bundle, verified recovery, code identity, limits, and rollback | Implemented |
 | G10b | Repository/environment preflight and time-bounded human pilot authorization | Implemented |
@@ -27,6 +27,20 @@ checks pass.
 | G14 | Current Node 24-compatible GitHub Actions pinned to reviewed commits with read-only token and no persisted checkout credentials | Implemented |
 | G15 | Fully pinned Python 3.11/Linux transitive constraints used by CI and verified against the installed environment | Implemented |
 | G16 | Consolidated capability index and one-command credential-free local product demo with a hash-verified manifest | Implemented |
+| G17 | Four-area deterministic portfolio demo with manifest-bound resource/city identity and cross-area isolation evidence | Implemented |
+| G18 | UK local-time and daylight-saving-aware calendar feature contract with local/Fabric parity | Next |
+| G19 | Time-based previous-day and previous-week seasonal demand baselines with bounded source matching | Planned |
+| G20 | Calibrated prediction intervals with empirical coverage and width evidence | Planned |
+
+## Product-quality sequence
+
+The next product-quality work should proceed in this order:
+
+1. Add Europe/London local calendar features while retaining UTC timestamps as the canonical event identity.
+2. Compare UTC-only and UK-local calendar ridge features across winter, BST, and daylight-saving transitions.
+3. Add elapsed-time previous-day and previous-week seasonal baselines; do not assume a fixed row cadence.
+4. Add calibration-only uncertainty intervals after the point baselines and target contracts are stable.
+5. Extend the multi-area portfolio demo only after each new capability has an independently tested contract.
 
 ## Dependency rules
 
@@ -79,6 +93,16 @@ checks pass.
   before exposing advanced evidence-governance controls.
 - The portfolio demo is local evidence only and must keep every live-source,
   Fabric, schedule, promotion, and publication side-effect flag false.
+- Multi-area demo rows must remain partitioned by source-area/resource/city
+  identity; the demo must not prove correctness by aggregating the areas into
+  one anonymous series.
+- UTC remains the canonical event and target timestamp. UK-local calendar fields
+  are derived features only and must expose their timezone and daylight-saving
+  offset explicitly.
+- Seasonal baselines must match by elapsed time with a tolerance and coverage
+  contract; fixed row offsets are not an acceptable proxy for one day or week.
+- Prediction intervals must be calibrated on evidence unavailable to model
+  fitting and evaluated on later rows; test labels may not set interval width.
 
 ## Reusable PR workflow
 
