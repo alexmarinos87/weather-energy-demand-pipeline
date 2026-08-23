@@ -24,7 +24,8 @@ checks pass.
 | G11 | Immutable named post-pilot decision to continue evidence collection, revise, or retire without automatic action | Implemented |
 | G12 | Reproducible user-facing demand/weather analytics report and valid thin-client notebooks | Implemented |
 | G13 | Remove misleading zero-byte SQL placeholders and enforce non-empty tracked implementation artifacts | Implemented |
-| G14 | Move CI to current Node 24-compatible, commit-pinned GitHub Actions and verify action provenance | Next |
+| G14 | Current Node 24-compatible GitHub Actions pinned to reviewed commits with read-only token and no persisted checkout credentials | Implemented |
+| G15 | Fully pinned transitive Python constraints used by CI and checked against direct requirements | Next |
 
 ## Dependency rules
 
@@ -68,8 +69,11 @@ checks pass.
   data and must not require live source calls in CI.
 - Tracked source, notebook, SQL, and operating-document artifacts must not be
   empty placeholders that imply an implementation which does not exist.
-- GitHub Actions must be pinned to reviewed commit SHAs and must not rely on a
-  deprecated action runtime.
+- GitHub Actions must be pinned to reviewed commit SHAs, use the current action
+  runtime, retain read-only token permissions, and avoid persisted checkout
+  credentials.
+- Python dependency resolution used by CI must be reproducible and refreshed
+  only through a reviewed change.
 
 ## Reusable PR workflow
 
