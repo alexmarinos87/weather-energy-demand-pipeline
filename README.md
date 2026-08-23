@@ -1,89 +1,174 @@
 # Weather–Energy Demand Pipeline
 
-## Problem
+A contract-first weather and electricity-demand data product for Microsoft Fabric, with reproducible local analytics, leakage-safe forecasting experiments, provider-quality evidence, and explicit human authority over pilots and model decisions.
 
-Weather and electricity-demand data arrive from different systems, at different frequencies, and with different spatial meanings. Combining them without explicit source identity can produce untraceable analysis, cross-region joins, weather leakage, or model scores contaminated by labels that would not yet have been known when a forecast was made.
+The repository separates three concerns:
 
-## Solution
+```text
+product path
+    ingestion → silver → causal gold features → analytics/forecast evidence
 
-This project implements a Microsoft Fabric medallion pipeline plus bounded local forecasting experiments that:
+evaluation path
+    bounded future targets → holdout/rolling backtests → paired weather models
 
-- ingest OpenWeather current observations and complete, bounded NGED Live Data snapshots;
-- validate source responses against versioned contracts before writing raw data;
-- bind each NGED licence-area resource to an explicit project weather proxy;
-- propagate source-area and file-level provenance through silver tables;
-- join only same-area weather at or before each demand timestamp;
-- build causal lag, rolling, calendar, weather, and aggregation features;
-- ingest bounded OpenWeather 5-day / 3-hour forecasts by contract-owned coordinates;
-- write immutable raw forecast snapshots and normalized target-weather Parquet;
-- compare observed-at-feature and target-valid-weather ridge models on paired rows;
-- create bounded 30- and 60-minute future demand targets;
-- purge training labels that would not yet be available at evaluation feature time;
-- support both a fixed chronological holdout and optional rolling-origin backtesting;
-- append prediction, target-coverage, evaluation-origin, and metric evidence to Delta tables; and
-- record blocking and warning data-quality results in `dq_run_results`.
+control path
+    reconciliation → health evidence → human review → bounded pilot records
+```
 
-The active cloud target remains Microsoft Fabric: OneLake, Lakehouse Delta tables, Spark notebooks, Data Factory orchestration, the SQL analytics endpoint, and Power BI-ready outputs. The OpenWeather forecast adapter and target-weather comparison are local, explicit paths and are not yet scheduled or deployed in Fabric.
+No control artifact silently deploys, schedules, activates, or promotes anything.
+
+## One-command credential-free demo
+
+Install the supported Python 3.11/Linux dependency resolution:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install \
+  -r requirements.txt \
+  -c constraints/ci-python311-linux.txt
+python -m pip check
+```
+
+Run the complete local product journey:
+
+```bash
+python -m forecasting.run_portfolio_demo \
+  --output-root data/portfolio-demo \
+  --output-format csv
+```
+
+Each run creates a new immutable directory:
+
+```text
+data/portfolio-demo/pdm-<24-hex>/
+```
+
+It contains:
+
+- deterministic gold-like demand/weather features;
+- deterministic target-valid forecast weather;
+- 30- and 60-minute persistence and ridge baseline predictions/metrics;
+- paired `ridge_weather_lag` and `ridge_target_weather` predictions/metrics;
+- a demand/weather overview, hourly profile, temperature-band profile, peak events, and Markdown report; and
+- `portfolio_demo_manifest.json` with file sizes, row counts, SHA-256 hashes, model identities, horizons, and no-side-effect flags.
+
+The demo reads no credential, performs no live source call, changes no Fabric workspace, activates no schedule, promotes no model, and publishes nothing externally. See `PORTFOLIO_DEMO.md`.
+
+## Capability index
+
+### Product and evaluation
+
+| Capability | Main entry point | Detail |
+| --- | --- | --- |
+| One-command local product demo | `python -m forecasting.run_portfolio_demo` | `PORTFOLIO_DEMO.md` |
+| Descriptive demand/weather analytics | `python -m forecasting.run_demand_weather_report` | `ANALYTICS_REPORT.md` |
+| Current-weather ingestion | `ingestion/weather/fetch_weather.py` | `architecture/data_flow.md` |
+| NGED energy ingestion | `ingestion/energy/fetch_energy.py` | `architecture/data_flow.md` |
+| OpenWeather forecast ingestion | `ingestion/forecast_weather/fetch_openweather_forecast.py` | `FORECAST_WEATHER.md` |
+| Fixed and rolling-origin baselines | `python -m forecasting.run_baseline` | `ROLLING_ORIGIN.md` |
+| Paired observed/target-weather comparison | `--model-set weather-comparison` | `FORECAST_WEATHER.md` |
+| Forecast-versus-observed reconciliation | `python -m forecasting.run_weather_reconciliation` | `FORECAST_RECONCILIATION.md` |
+| Forecast-provider health/drift evidence | `python -m forecasting.run_provider_monitoring` | `PROVIDER_MONITORING.md` |
+| Fabric core medallion path | `fabric/notebooks/01` through `06` | `fabric/README.md` |
+| Optional Fabric forecast bronze/silver | `fabric/notebooks/01b`, `02b` | `fabric/FORECAST_WEATHER.md` |
+| Optional Fabric paired comparison | `fabric/notebooks/05c`, `06c` | `fabric/pipelines/target_weather_model_comparison_pipeline.md` |
+
+### Evidence and human authority
+
+| Capability | Boundary document |
+| --- | --- |
+| Target-weather promotion assessment | `PROMOTION_ASSESSMENT.md` |
+| Immutable model-candidate registry | `MODEL_REGISTRY.md` |
+| Evidence inventory/retention/quarantine/compaction | `EVIDENCE_LIFECYCLE.md`, `EVIDENCE_OPERATIONS.md`, `EVIDENCE_COMPACTION.md` |
+| Candidate recovery bundle and restore | `RECOVERY_BUNDLE.md` |
+| Non-production Fabric pilot planning | `FABRIC_PILOT.md` |
+| Preflight and single-use authorization | `PILOT_AUTHORIZATION.md` |
+| Operator-supplied pilot receipt/assessment | `PILOT_RUN_RECEIPT.md` |
+| Named post-pilot decision | `POST_PILOT_DECISION.md` |
+| CI action provenance | `CI_SUPPLY_CHAIN.md` |
+| Python dependency resolution | `DEPENDENCY_REPRODUCIBILITY.md` |
+| Dependency-ordered next work | `ROADMAP.md` |
+
+## Architecture
+
+### Core observed-weather path
+
+```text
+OpenWeather current + NGED Live Data
+        ↓ source-area preflight and JSON contracts
+immutable raw JSON + _pipeline_metadata
+        ↓ typed parsing, provenance, deterministic deduplication
+silver_weather + silver_energy
+        ↓ same-area current weather at/before demand time
+        ↓ maximum weather age six hours
+gold_weather_demand_join
+        ↓ prior-demand lags/rolling windows + calendar/weather features
+gold_feature_engineering
+        ↓ bounded 30/60-minute demand targets
+        ↓ unavailable-label purge at every evaluation boundary
+persistence_current_value + ridge_weather_lag
+        ↓
+forecast_baseline_predictions + forecast_baseline_metrics
+```
+
+### Target-weather evidence path
+
+```text
+OpenWeather 5-day / 3-hour forecast
+        ↓ fixed HTTPS endpoint + contract-owned coordinates
+        ↓ schema/count/order/country/coordinate checks
+immutable content-addressed raw forecast snapshot
+        ↓ conservative retrieval-time availability boundary
+normalized target-weather evidence
+        ↓ same-area, available-by-feature-time, target-valid matching
+paired supervised demand cohort
+        ↓ identical targets, cutoffs, origins, and label purge
+ridge_weather_lag ↔ ridge_target_weather
+        ↓
+comparison + reconciliation + provider-health evidence
+        ↓
+human-review-only assessment and candidate records
+```
+
+Spark Delta tables are canonical for the Fabric path. SQL analytics endpoint files are pass-through views; they do not reimplement silver cleaning, target matching, model fitting, or rolling-origin logic.
 
 ## Data sources and spatial contract
 
-- **OpenWeather current weather API** — current weather observations.
-- **OpenWeather 5-day / 3-hour forecast API** — bounded local forecast snapshots.
-- **National Grid Electricity Distribution Connected Data Portal** — near-real-time demand, generation, and import data split by licence area.
+- **OpenWeather current weather API** supplies current observations.
+- **OpenWeather 5-day / 3-hour forecast API** supplies bounded forecast snapshots.
+- **National Grid Electricity Distribution Connected Data Portal** supplies licence-area demand, generation, and import data.
 
-`data-contracts/source_areas.json` defines the allowed source binding and the project-owned coordinate used for forecast requests:
+`data-contracts/source_areas.json` owns the allowed source bindings:
 
-| Source area | NGED resource | Weather proxy | Forecast coordinates |
+| Source area | NGED resource | Representative weather proxy | Forecast coordinates |
 | --- | --- | --- | --- |
 | East Midlands | `92d3431c-15d7-4aa6-ad34-2335596a026c` | `Nottingham,GB` | `52.9548, -1.1581` |
 | South Wales | `38b81427-a2df-42f2-befa-4d6fe9b54c98` | `Cardiff,GB` | `51.4816, -3.1791` |
 | South West | `85aaa199-15df-40ec-845f-6c61cbedc20f` | `Bristol,GB` | `51.4545, -2.5879` |
 | West Midlands | `1c3447df-37d7-4fb4-9f99-0e2a0d691dbe` | `Birmingham,GB` | `52.4862, -1.8904` |
 
-The cities and coordinates are representative project proxies. They are not official NGED mappings and do not represent every weather condition across a licence area.
+The cities and coordinates are project-owned representatives, not official NGED mappings and not complete descriptions of weather across each licence area.
 
-## Data and evaluation flow
+## Core contracts
 
-```text
-OpenWeather current + NGED Live Data
-        ↓ contract and source-area validation
-OneLake immutable raw JSON + provenance metadata
-        ↓ typed parsing and deduplication
-silver_weather + silver_energy
-        ↓ same-area, past-only weather matching
-gold_weather_demand_join
-        ↓ prior-demand lags/rolling windows + causal weather/calendar features
-gold_feature_engineering
-        ↓ 30/60-minute bounded target matching
-        ↓ fixed holdout OR expanding rolling origins
-        ↓ unavailable-label purge at every evaluation cutoff
-persistence_current_value + ridge_weather_lag
-        ↓
-forecast_baseline_predictions + forecast_baseline_metrics
-        ↓
-SQL endpoint / Power BI / model comparison
-```
+### Causal current-weather matching
 
-The local target-weather path is separate from the deployed Fabric path:
+A demand observation may use only current weather from the same non-null `source_area` whose timestamp is at or before demand time and no more than six hours old. The latest eligible observation wins deterministically.
 
-```text
-OpenWeather 5-day / 3-hour forecast
-        ↓ fixed HTTPS endpoint + contract coordinates
-        ↓ raw schema, count/order/country/coordinate checks
-immutable content-addressed raw JSON
-        ↓ conservative retrieval-time availability boundary
-normalized target-weather Parquet
-        ↓ causal issue/ingestion/valid-time matching
-paired supervised demand rows
-        ↓ identical cutoffs and label purge
-ridge_weather_lag ↔ ridge_target_weather
-        ↓
-local weather-comparison predictions and metrics
-```
+Demand lag and rolling features exclude the current demand target row.
 
-For each demand observation, the Fabric gold join selects the latest current-weather observation from the same `source_area` whose timestamp is no later than demand time and no more than six hours old. Demand rolling features exclude the current row.
+### Bounded demand targets
 
-Every demand prediction must satisfy:
+For every source-area/resource/city group and requested horizon:
+
+1. calculate the ideal target at feature time plus 30 or 60 minutes;
+2. exclude trailing feature rows whose ideal target lies beyond retained history;
+3. choose the first demand observation at or after the ideal target;
+4. accept it only inside the configured late-match tolerance; and
+5. enforce matched/eligible coverage for every group and horizon.
+
+Every prediction must satisfy:
 
 ```text
 trained_through_utc < feature_timestamp_utc < event_timestamp_utc
@@ -93,141 +178,43 @@ Rolling-origin predictions additionally satisfy:
 
 ```text
 trained_through_utc
-    <
-origin_cutoff_utc
-    <=
-feature_timestamp_utc
-    <
-event_timestamp_utc
+    < origin_cutoff_utc
+    <= feature_timestamp_utc
+    < event_timestamp_utc
 ```
 
-## Time-horizon target contract
+### Target-valid forecast weather
 
-The local and Fabric demand runtimes use the same matching rules for every source-area/resource/city group and requested horizon:
-
-1. Calculate the ideal target timestamp at feature time plus 30 or 60 minutes.
-2. Exclude trailing feature rows whose ideal target lies beyond retained history.
-3. Choose the first source observation at or after the ideal target timestamp.
-4. Accept that target only when it is no more than `target_tolerance_minutes` late.
-5. Require matched/eligible coverage of at least `min_target_coverage` for every configured group and horizon.
-6. Fail when a configured group/horizon has no eligible history or insufficient in-history target coverage.
-
-Forecast evidence records requested and actual elapsed horizons, target delay, observation distance, target coverage, feature time, future target time, current demand, actual future demand, predictions, errors, and the training-label boundary.
-
-## Bounded OpenWeather forecast ingestion
-
-The local adapter is:
-
-```text
-ingestion/forecast_weather/fetch_openweather_forecast.py
-```
-
-It validates the exact HTTPS OpenWeather host and API path, metric units, timeout, and record bound before reading `OPENWEATHER_API_KEY`. Requests use the source-area latitude and longitude from the project contract rather than accepting arbitrary runtime coordinates.
-
-The raw response must satisfy `data-contracts/openweather_forecast_raw_schema.json`. The adapter also rejects:
-
-- a `cnt` value that disagrees with the returned list;
-- more records than the configured bound, capped at 40;
-- duplicate or non-increasing forecast timestamps;
-- a non-GB response for the configured proxy;
-- response coordinates outside the configured tolerance; and
-- a snapshot with no future forecast slots after retrieval.
-
-The provider records expose future valid timestamps. The adapter does not claim an exact provider model-run timestamp. It therefore treats completed retrieval time as a conservative issue and availability boundary and records:
-
-```text
-forecast_issue_basis=retrieval_time_surrogate
-forecast_issued_at_utc=forecast_ingested_at_utc=forecast_retrieved_at_utc
-```
-
-Raw and normalized outputs are immutable and content-addressed:
-
-```text
-data/raw/forecast_weather/openweather/
-  ingestion_date=YYYY-MM-DD/
-    openweather_forecast_YYYYMMDD_HHMMSS_<snapshot>.json
-
-data/normalized/forecast_weather/openweather/
-  ingestion_date=YYYY-MM-DD/
-    forecast_weather_YYYYMMDD_HHMMSS_<snapshot>.parquet
-```
-
-No API key is written to either output.
-
-### Run the forecast adapter locally
-
-```bash
-cp ingestion/forecast_weather/config.example.yaml \
-   ingestion/forecast_weather/config.yaml
-export OPENWEATHER_API_KEY=...
-python3 ingestion/forecast_weather/fetch_openweather_forecast.py
-```
-
-The adapter is on-demand only. Tests and CI use mocked responses and perform no live OpenWeather request.
-
-## Target-valid forecast-weather contract
-
-`data-contracts/forecast_weather_schema.json` and `forecasting/forecast_weather.py` define the provider-neutral normalized contract. It separates provider issue or declared issue surrogate, pipeline availability, forecast valid time, and future demand target time.
-
-A normalized forecast may match a supervised demand row only when it has the same area and city and satisfies:
+A normalized forecast can enter a demand feature set only when:
 
 ```text
 forecast_issued_at_utc
-    <=
-forecast_ingested_at_utc
-    <=
-feature_timestamp_utc
-    <
-target_timestamp_utc
+    <= forecast_ingested_at_utc
+    <= feature_timestamp_utc
+    < target_timestamp_utc
 ```
 
-Forecast valid time must occur after feature time and within the configured tolerance of the demand target. The closest target-valid record wins; ties use the latest available ingestion and issue times. Coverage is enforced independently per source-area/resource/city/horizon group, so missing forecast weather cannot be hidden by silently dropping rows.
+It must have the same area/city identity, a valid time after feature time, a bounded difference from the demand target, and acceptable coverage. The OpenWeather adapter explicitly records retrieval time as a conservative issue/availability surrogate rather than inventing an unavailable provider model-run timestamp.
 
-## Paired target-weather model comparison
+## Local commands
 
-`run_weather_model_comparison` evaluates both ridge models on exactly the same target-weather-covered cohort:
-
-- `ridge_weather_lag` uses observed temperature, humidity, and weather age at feature time;
-- `ridge_target_weather` replaces those three fields with target-valid forecast temperature, humidity, and forecast availability age.
-
-All demand, lag, rolling, calendar, target, split, rolling-origin, and label-purge semantics are identical. The comparison fails if evaluated timestamps or training boundaries diverge. Evidence is versioned as `weather-model-comparison-v1`.
-
-See `FORECAST_WEATHER.md` for the complete adapter, contract, and comparison details.
-
-## Evaluation modes
-
-The fixed holdout remains the default in both local and Fabric demand runtimes:
-
-```text
-earliest 60% → training
-next 20%     → validation
-final 20%    → test
-```
-
-Select rolling-origin evaluation explicitly to partition validation history into repeated expanding-window origins while retaining the final 20% as one untouched test origin. Every origin independently purges labels that would not have been known at its cutoff.
-
-Rolling-origin evidence records:
-
-- `origin_fold`;
-- `origin_count`;
-- `origin_cutoff_utc`;
-- `training_observation_count`; and
-- `evaluation_contract_version=rolling-origin-v1`.
-
-The evaluator rejects incomplete fold sequences, reused evaluation timestamps, decreasing origin cutoffs, decreasing available training history, invalid validation/test fold placement, or labels unavailable at an origin cutoff.
-
-## Credential-free forecasting demos
-
-Install dependencies once:
+### Descriptive analytics
 
 ```bash
-python3 -m pip install -r requirements.txt
+python -m forecasting.run_demand_weather_report \
+  --demo \
+  --top-peak-count 10 \
+  --temperature-bin-width-c 2.5 \
+  --output-dir data/analytics/demand_weather \
+  --output-format csv
 ```
 
-Fixed baseline holdout:
+The report is descriptive. Correlation and temperature-band averages do not establish causation.
+
+### Fixed baseline
 
 ```bash
-python3 -m forecasting.run_baseline \
+python -m forecasting.run_baseline \
   --demo \
   --horizon-minutes 30 60 \
   --target-tolerance-minutes 5 \
@@ -236,15 +223,10 @@ python3 -m forecasting.run_baseline \
   --output-format csv
 ```
 
-Outputs:
-
-- `data/forecasting/baseline_predictions.csv`
-- `data/forecasting/baseline_metrics.csv`
-
-Rolling-origin baseline:
+### Rolling-origin baseline
 
 ```bash
-python3 -m forecasting.run_baseline \
+python -m forecasting.run_baseline \
   --demo \
   --evaluation-mode rolling-origin \
   --rolling-origin-folds 3 \
@@ -253,95 +235,113 @@ python3 -m forecasting.run_baseline \
   --output-format csv
 ```
 
-Outputs:
-
-- `data/forecasting/rolling_origin_predictions.csv`
-- `data/forecasting/rolling_origin_metrics.csv`
-
-Paired observed-versus-target-weather comparison:
+### Paired target-weather comparison
 
 ```bash
-python3 -m forecasting.run_baseline \
+python -m forecasting.run_baseline \
   --demo \
   --model-set weather-comparison \
+  --evaluation-mode rolling-origin \
+  --rolling-origin-folds 3 \
   --horizon-minutes 30 60 \
-  --forecast-valid-time-tolerance-minutes 15 \
-  --forecast-max-availability-age-minutes 180 \
-  --min-forecast-weather-coverage 0.90 \
   --output-dir data/forecasting \
   --output-format csv
 ```
 
-Outputs:
+For retained/exported data, provide both gold features and normalized forecast weather with `--input` and `--forecast-weather-input`.
 
-- `data/forecasting/weather_comparison_predictions.csv`
-- `data/forecasting/weather_comparison_metrics.csv`
+## Optional live local ingestion
 
-Add `--evaluation-mode rolling-origin --rolling-origin-folds 3` to produce:
-
-- `data/forecasting/rolling_origin_weather_comparison_predictions.csv`
-- `data/forecasting/rolling_origin_weather_comparison_metrics.csv`
-
-For real local files, provide both inputs:
-
-```bash
-python3 -m forecasting.run_baseline \
-  --input gold_feature_engineering.parquet \
-  --forecast-weather-input normalized_forecast_weather.parquet \
-  --model-set weather-comparison \
-  --evaluation-mode rolling-origin \
-  --horizon-minutes 30 60 \
-  --output-dir data/forecasting \
-  --output-format parquet
-```
-
-## Local ingestion development
+Copy the reviewed example configuration files, then keep credential values outside the repository:
 
 ```bash
 cp ingestion/weather/config.example.yaml ingestion/weather/config.yaml
+cp ingestion/energy/config.example.yaml ingestion/energy/config.yaml
 cp ingestion/forecast_weather/config.example.yaml \
    ingestion/forecast_weather/config.yaml
-cp ingestion/energy/config.example.yaml ingestion/energy/config.yaml
-python3 -m pip install -r requirements.txt
-```
 
-Set credentials outside the repository:
-
-```bash
 export OPENWEATHER_API_KEY=...
 export NATIONAL_GRID_API_TOKEN=...
 ```
 
-Keep the same `source_area` across weather, forecast-weather, and energy configuration. Then run the required local paths explicitly:
+Run only the source path required:
 
 ```bash
-python3 ingestion/weather/fetch_weather.py
-python3 ingestion/forecast_weather/fetch_openweather_forecast.py
-python3 ingestion/energy/fetch_energy.py
-python3 transformations/silver/clean_weather.py
-python3 transformations/silver/clean_energy.py
-pytest -q
+python ingestion/weather/fetch_weather.py
+python ingestion/energy/fetch_energy.py
+python ingestion/forecast_weather/fetch_openweather_forecast.py
 ```
 
-Energy ingestion requests CKAN pages in ascending `_id` order until the total reported by the first page is complete. It fails rather than silently publishing a partial snapshot when ordering, totals, resource identity, or the explicit record bound is violated.
+Local raw and normalized evidence is written under ignored `data/` paths. Tests and CI mock source responses and perform no live request.
 
-## Fabric run order
+## Microsoft Fabric
 
-1. Create and attach the `weather_energy_lakehouse` Lakehouse.
-2. Upload all files in `data-contracts/` to `Files/data-contracts/`.
-3. Import notebook sources `01` through `06` from `fabric/notebooks/`.
-4. Create `weather_energy_demand_pipeline` from `fabric/pipelines/weather_energy_demand_pipeline.md`.
-5. Supply secure credentials and a consistent `SOURCE_AREA`, `WEATHER_CITY`, and `NATIONAL_GRID_RESOURCE_ID`.
-6. Configure `HORIZON_MINUTES`, `TARGET_TOLERANCE_MINUTES`, and `MIN_TARGET_COVERAGE`.
-7. Keep `EVALUATION_MODE=holdout` for ordinary hourly runs, or select `rolling-origin` with a reviewed `ROLLING_ORIGIN_FOLDS`.
-8. Run ingestion, silver, gold, source/gold quality, forecasting, and forecast quality in order.
-9. Optionally create pass-through SQL views from `fabric/sql/gold_views_tsql.sql` and `fabric/sql/forecast_views_tsql.sql`.
-10. Enable the schedule only after source quotas and Fabric capacity are confirmed.
+The Fabric source files are implementation templates and contracts; this repository workflow does not deploy them automatically.
 
-The Fabric run order does not yet include forecast-weather ingestion.
+Core order:
 
-## Forecasting boundary
+```text
+01_ingest_api_to_bronze
+02_bronze_to_silver
+03_build_gold_tables
+04_data_quality_checks
+05_baseline_forecasting
+06_forecast_quality_checks
+```
 
-The repository now has an executable, bounded local provider adapter that produces normalized forecast-weather evidence for the paired model comparison. It is not a production forecast service: retrieval is manual, provider issue time is represented by an explicit conservative retrieval-time surrogate, and no forecast-versus-observed reconciliation or provider-quality monitoring exists yet. The ordinary local baseline and Fabric notebooks continue to use observed weather.
+Optional manual evidence subflows:
 
-The next useful increment is retained forecast-versus-observed reconciliation and target-time coverage monitoring. Fabric bronze/silver ingestion and Spark model parity should follow only after real snapshots demonstrate acceptable coverage and usefulness.
+```text
+01b_ingest_forecast_weather_to_bronze
+02b_forecast_weather_to_silver
+
+05c_target_weather_model_comparison
+06c_target_weather_comparison_quality_checks
+```
+
+The optional subflows remain unscheduled. Successful execution does not change the active observed-weather baseline and does not authorize promotion.
+
+## Test and CI contract
+
+CI uses:
+
+- Python 3.11;
+- the complete `constraints/ci-python311-linux.txt` resolution;
+- `python -m pip check`;
+- commit-pinned Node 24 GitHub Actions;
+- `contents: read` token permission;
+- `persist-credentials: false` checkout;
+- Python compilation; and
+- the complete pytest suite.
+
+Run the equivalent local gate:
+
+```bash
+python -m pip install \
+  -r requirements.txt \
+  -c constraints/ci-python311-linux.txt
+python -m pip check
+python -m compileall -q ingestion transformations forecasting fabric/notebooks tests
+python -m pytest -q
+```
+
+## Human-authority boundary
+
+The repository can produce evidence for review, but it cannot silently:
+
+- approve or activate a model;
+- authorize or execute another Fabric pilot;
+- mutate the model registry from a post-pilot decision;
+- schedule ingestion or forecasting;
+- deploy a Fabric workspace;
+- deliver an external alert;
+- permanently delete retained evidence; or
+- replace the observed-weather control model.
+
+A live Fabric pilot remains an external, named human operation requiring a current plan, preflight, single-use authorization, bounded execution, immutable receipt, assessment, and a separate named post-pilot decision.
+
+## Current boundary
+
+The repository has source adapters, local and Fabric transformation logic, descriptive analytics, historical forecast evaluation, provider-quality evidence, recovery controls, and manual pilot contracts. It does not claim that a live Fabric workspace has been deployed or that the target-weather candidate is production-approved.
+
+See `ROADMAP.md` for the next dependency-ordered increment.
