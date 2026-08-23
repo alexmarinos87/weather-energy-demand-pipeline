@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "fabric_pilot_environment_snapshot_v1",
+  "type": "object",
+  "required": [
+    "snapshot_id",
+    "captured_at_utc",
+    "environment",
+    "workspace_name",
+    "lakehouse_name",
+    "capacity_name",
+    "workspace_exists",
+    "lakehouse_exists",
+    "capacity_available",
+    "available_capacity_units",
+    "current_capacity_utilization_pct",
+    "active_job_count",
+    "pilot_schedule_count",
+    "current_active_model",
+    "credential_values_included"
+  ],
+  "properties": {
+    "snapshot_id": {"type": "string", "minLength": 1},
+    "captured_at_utc": {"type": "string", "format": "date-time"},
+    "environment": {"enum": ["sandbox", "development", "test", "non-production"]},
+    "workspace_name": {"type": "string", "minLength": 1},
+    "lakehouse_name": {"type": "string", "minLength": 1},
+    "capacity_name": {"type": "string", "minLength": 1},
+    "workspace_exists": {"type": "boolean"},
+    "lakehouse_exists": {"type": "boolean"},
+    "capacity_available": {"type": "boolean"},
+    "available_capacity_units": {"type": "number", "minimum": 0},
+    "current_capacity_utilization_pct": {"type": "number", "minimum": 0, "maximum": 100},
+    "active_job_count": {"type": "integer", "minimum": 0},
+    "pilot_schedule_count": {"type": "integer", "minimum": 0},
+    "current_active_model": {"type": "string", "minLength": 1},
+    "credential_values_included": {"const": false}
+  },
+  "additionalProperties": true
+}
