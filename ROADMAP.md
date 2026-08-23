@@ -21,7 +21,8 @@ checks pass.
 | G10b | Repository/environment preflight and time-bounded human pilot authorization | Implemented |
 | G10c | Immutable operator run receipt, limit assessment, rollback verification, and post-run review evidence | Implemented |
 | G10d | Controlled live Fabric pilot execution | External human operation required |
-| G11 | Post-pilot human decision on whether to continue, revise, or retire the candidate | Next |
+| G11 | Immutable named post-pilot decision to continue evidence collection, revise, or retire without automatic action | Implemented |
+| G12 | Reproducible user-facing demand/weather analytics report replacing empty notebook placeholders | Next |
 
 ## Dependency rules
 
@@ -35,6 +36,8 @@ checks pass.
   before pilot planning.
 - An `approved` registry state is evidence approval only; it never authorizes
   deployment or changes the active model.
+- A post-pilot decision recommends a next action but cannot mutate the registry,
+  authorize another pilot, deploy, schedule, or activate a model.
 - Pilot planning records credential reference names only. Credential values must
   remain outside repository evidence.
 - A pilot must be non-production, manually executed, time/capacity/row bounded,
@@ -59,14 +62,16 @@ checks pass.
   tables.
 - Monitoring may report evidence but must not remediate, deploy, or promote
   automatically.
+- User-facing analytics must be reproducible from retained local or exported
+  data and must not require live source calls in CI.
 
 ## Reusable PR workflow
 
 1. Inspect the latest `main`, open PRs, architecture, tests, and unresolved review feedback.
 2. Select the highest-value missing dependency, not the largest possible feature.
 3. Rebuild the change directly on the latest base and keep it one coherent layer.
-4. Verify exact ancestry, changed paths, and documentation boundaries.
+4. Verify exact ancestry, changed paths, and unintended regressions.
 5. Run compilation and the complete test suite; diagnose failures rather than bypassing checks.
-6. Check comments, reviews, and unresolved threads.
-7. Squash-merge after the exact head is green.
-8. Verify the merged tree and confirm no unexpected PR remains open.
+6. Check unresolved review feedback.
+7. Squash-merge one dependency layer at a time.
+8. Verify the merged tree and confirm that no PRs remain unexpectedly open.
