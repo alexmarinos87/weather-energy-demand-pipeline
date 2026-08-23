@@ -30,18 +30,19 @@ checks pass.
 | G17 | Four-area deterministic portfolio demo with manifest-bound resource/city identity and cross-area isolation evidence | Implemented |
 | G18 | Europe/London calendar fields, explicit GMT/BST evidence, DST-transition tests, local model mode, and pandas/Fabric parity | Implemented |
 | G19a | Elapsed-time previous-day and previous-week local baselines with tolerance, coverage, holdout, and rolling-origin evidence | Implemented |
-| G19b | Fabric parity for elapsed-time seasonal baseline comparison and independent quality checks | Next |
-| G20 | Calibration-only prediction intervals using causally available validation residuals, finite-sample ranks, and empirical test coverage/width evidence | Implemented locally |
+| G19b | Fabric parity for elapsed-time seasonal baseline comparison and independent quality checks | Implemented as an optional manual subflow |
+| G20a | Calibration-only prediction intervals using causally available validation residuals, finite-sample ranks, and empirical test coverage/width evidence | Implemented locally |
+| G20b | Fabric parity for calibration-only prediction intervals without test-label leakage | Next |
 | G21 | Multi-area portfolio-demo integration for independently validated seasonal and interval evidence | Planned |
 
 ## Product-quality sequence
 
 The next product-quality work should proceed in this order:
 
-1. Add optional Fabric parity for the elapsed seasonal comparison without changing the ordinary baseline tables or schedule.
-2. Add optional Fabric parity for calibration-only intervals without using test labels for width.
-3. Compare persistence, seasonal, UTC-calendar ridge, and UK-local-calendar ridge evidence by area and horizon.
-4. Extend the multi-area portfolio demo only after each new capability has an independently tested contract.
+1. Add optional Fabric parity for calibration-only intervals without using test labels for width.
+2. Compare persistence, seasonal, UTC-calendar ridge, and UK-local-calendar ridge evidence by area and horizon.
+3. Extend the multi-area portfolio demo only after each new capability has an independently tested contract.
+4. Add interval calibration and width monitoring only after Fabric interval parity is stable.
 
 ## Dependency rules
 
@@ -106,6 +107,8 @@ The next product-quality work should proceed in this order:
   tolerance and coverage contract; fixed row offsets are not acceptable.
 - Previous-day and previous-week models must be scored on the same cohort and
   training boundary as persistence and ridge controls.
+- Fabric seasonal parity must reuse one retained point-prediction run and may not
+  silently retrain or replace the ordinary baseline.
 - Prediction intervals must be calibrated on validation labels available before
   the first test feature timestamp; overlapping validation labels and all test
   labels are forbidden from setting interval width.
