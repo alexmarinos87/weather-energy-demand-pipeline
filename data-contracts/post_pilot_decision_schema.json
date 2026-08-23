@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "post_pilot_human_decision_v1",
+  "type": "object",
+  "required": [
+    "decision_id",
+    "decision_revision",
+    "decision_state",
+    "pilot_id",
+    "plan_hash",
+    "authorization_id",
+    "authorization_hash",
+    "receipt_id",
+    "receipt_hash",
+    "assessment_id",
+    "assessment_hash",
+    "candidate_id",
+    "candidate_version",
+    "external_run_id",
+    "assessment_outcome",
+    "run_status",
+    "decision",
+    "decision_effect",
+    "decision_maker",
+    "review_ticket",
+    "reason",
+    "action_items",
+    "decided_at_utc",
+    "new_pilot_cycle_requested",
+    "candidate_revision_requested",
+    "candidate_retirement_requested",
+    "human_decision_recorded",
+    "automatic_decision_allowed",
+    "model_registry_mutation_allowed",
+    "authorization_reuse_allowed",
+    "pilot_reexecution_authorized",
+    "schedule_activation_allowed",
+    "deployment_authorized",
+    "model_activation_authorized",
+    "active_model_before",
+    "active_model_expected_after",
+    "active_model_unchanged",
+    "source_evidence_mutated",
+    "decision_contract_version",
+    "decision_hash"
+  ],
+  "properties": {
+    "decision_id": {"type": "string", "pattern": "^fpd-[0-9a-f]{24}$"},
+    "decision_revision": {"const": 1},
+    "decision_state": {"const": "recorded"},
+    "pilot_id": {"type": "string", "pattern": "^fpl-[0-9a-f]{24}$"},
+    "plan_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "authorization_id": {"type": "string", "pattern": "^fpa-[0-9a-f]{24}$"},
+    "authorization_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "receipt_id": {"type": "string", "pattern": "^fpr-[0-9a-f]{24}$"},
+    "receipt_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "assessment_id": {"type": "string", "pattern": "^fra-[0-9a-f]{24}$"},
+    "assessment_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "candidate_id": {"type": "string", "minLength": 1},
+    "candidate_version": {"type": "string", "minLength": 1},
+    "external_run_id": {"type": "string", "minLength": 1},
+    "assessment_outcome": {
+      "enum": ["eligible_for_post_pilot_review", "pilot_failed"]
+    },
+    "run_status": {
+      "enum": ["completed", "failed", "aborted", "rolled_back"]
+    },
+    "decision": {
+      "enum": [
+        "continue_evidence_collection",
+        "revise_candidate",
+        "retire_candidate"
+      ]
+    },
+    "decision_effect": {
+      "enum": [
+        "request_new_pilot_cycle",
+        "request_candidate_revision",
+        "request_candidate_retirement"
+      ]
+    },
+    "decision_maker": {"type": "string", "minLength": 1},
+    "review_ticket": {"type": "string", "minLength": 1},
+    "reason": {"type": "string", "minLength": 20},
+    "action_items": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "decided_at_utc": {"type": "string", "format": "date-time"},
+    "new_pilot_cycle_requested": {"type": "boolean"},
+    "candidate_revision_requested": {"type": "boolean"},
+    "candidate_retirement_requested": {"type": "boolean"},
+    "human_decision_recorded": {"const": true},
+    "automatic_decision_allowed": {"const": false},
+    "model_registry_mutation_allowed": {"const": false},
+    "authorization_reuse_allowed": {"const": false},
+    "pilot_reexecution_authorized": {"const": false},
+    "schedule_activation_allowed": {"const": false},
+    "deployment_authorized": {"const": false},
+    "model_activation_authorized": {"const": false},
+    "active_model_before": {"const": "ridge_weather_lag"},
+    "active_model_expected_after": {"const": "ridge_weather_lag"},
+    "active_model_unchanged": {"const": true},
+    "source_evidence_mutated": {"const": false},
+    "decision_contract_version": {"const": "post-pilot-human-decision-v1"},
+    "decision_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"decision": {"const": "continue_evidence_collection"}}
+      },
+      "then": {
+        "properties": {
+          "assessment_outcome": {"const": "eligible_for_post_pilot_review"},
+          "decision_effect": {"const": "request_new_pilot_cycle"},
+          "new_pilot_cycle_requested": {"const": true},
+          "candidate_revision_requested": {"const": false},
+          "candidate_retirement_requested": {"const": false}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"decision": {"const": "revise_candidate"}}},
+      "then": {
+        "properties": {
+          "decision_effect": {"const": "request_candidate_revision"},
+          "new_pilot_cycle_requested": {"const": false},
+          "candidate_revision_requested": {"const": true},
+          "candidate_retirement_requested": {"const": false}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"decision": {"const": "retire_candidate"}}},
+      "then": {
+        "properties": {
+          "decision_effect": {"const": "request_candidate_retirement"},
+          "new_pilot_cycle_requested": {"const": false},
+          "candidate_revision_requested": {"const": false},
+          "candidate_retirement_requested": {"const": true}
+        }
+      }
+    }
+  ],
+  "additionalProperties": true
+}
