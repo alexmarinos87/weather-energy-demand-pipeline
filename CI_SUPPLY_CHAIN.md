@@ -33,8 +33,10 @@ The test job therefore does not retain repository write credentials after checko
 ## Reproducibility and resource controls
 
 - Python remains explicit at `3.11`.
-- The pip download cache is keyed from `requirements.txt`.
-- Dependency installation uses the repository requirements file and does not upgrade pip opportunistically.
+- The pip download cache is keyed from both `requirements.txt` and `constraints/ci-python311-linux.txt`.
+- Direct requirements and the full Linux/Python 3.11 transitive resolution are installed together.
+- `python -m pip check` validates the resolved dependency graph before compilation.
+- Dependency installation does not upgrade pip opportunistically.
 - Compilation and tests use `python -m` so the selected interpreter owns the invoked modules.
 - A 20-minute job timeout bounds stuck CI execution.
 - Concurrency cancels an obsolete run for the same workflow and ref.
@@ -59,6 +61,9 @@ An action upgrade requires a bounded PR that:
 - incorrect approved SHAs;
 - stored checkout credentials;
 - write permissions;
-- missing pip cache dependency identity;
+- missing requirement or constraint cache identity;
+- unconstrained dependency installation;
 - opportunistic pip upgrades; and
 - unbounded or duplicate CI runs.
+
+The dependency closure and refresh procedure are documented separately in `DEPENDENCY_REPRODUCIBILITY.md`.

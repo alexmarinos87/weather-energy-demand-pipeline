@@ -59,17 +59,20 @@ def test_workflow_has_read_only_token_and_does_not_persist_checkout_credentials(
     assert "actions: write" not in text
 
 
-def test_python_setup_cache_is_bound_to_the_repository_requirements():
+def test_python_setup_cache_is_bound_to_requirements_and_constraints():
     text = workflow_text()
     assert 'python-version: "3.11"' in text
     assert "cache: pip" in text
-    assert "cache-dependency-path: requirements.txt" in text
-    assert "python -m pip install -r requirements.txt" in text
-    assert "pip install -r requirements.txt" not in text.replace(
-        "python -m pip install -r requirements.txt", ""
-    )
+    assert "cache-dependency-path: |" in text
+    assert "requirements.txt" in text
+    assert "constraints/ci-python311-linux.txt" in text
+    assert (
+        "python -m pip install -r requirements.txt "
+        "-c constraints/ci-python311-linux.txt"
+    ) in text
     assert "pip install --upgrade pip" not in text
     assert "python -m pip install --upgrade pip" not in text
+    assert "python -m pip check" in text
 
 
 def test_ci_uses_selected_interpreter_for_compile_and_tests():
@@ -97,3 +100,4 @@ def test_supply_chain_document_records_the_same_action_identities():
         assert commit in document
     assert "Node 24" in document
     assert "persist-credentials: false" in document
+    assert "constraints/ci-python311-linux.txt" in document
