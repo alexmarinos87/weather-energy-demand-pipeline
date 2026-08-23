@@ -5,6 +5,13 @@ from math import isfinite
 
 import pandas as pd
 
+from forecasting.calendar_features import (
+    CalendarFeatureError,
+    LOCAL_CALENDAR_COLUMNS,
+    UTC_CALENDAR_COLUMNS,
+    add_uk_local_calendar_features,
+)
+
 
 GROUP_COLUMNS = ["source_area", "resource_id", "city"]
 TIMESTAMP_COLUMN = "event_timestamp_utc"
@@ -16,17 +23,25 @@ REQUESTED_HORIZON_COLUMN = "requested_horizon_minutes"
 TARGET_TOLERANCE_COLUMN = "target_tolerance_minutes"
 TARGET_DELAY_COLUMN = "target_delay_minutes"
 SUPPORTED_HORIZON_MINUTES = (30, 60)
-DEFAULT_FEATURE_COLUMNS = [
+NON_CALENDAR_FEATURE_COLUMNS = (
     "demand_mw",
     "demand_lag_1",
     "demand_rolling_mean_12",
     "temperature",
     "humidity",
-    "hour_of_day_utc",
-    "day_of_week_utc",
-    "is_weekend_utc",
+)
+DEFAULT_FEATURE_COLUMNS = [
+    *NON_CALENDAR_FEATURE_COLUMNS,
+    *UTC_CALENDAR_COLUMNS,
     "weather_age_minutes",
 ]
+UK_LOCAL_FEATURE_COLUMNS = [
+    *NON_CALENDAR_FEATURE_COLUMNS,
+    *LOCAL_CALENDAR_COLUMNS,
+    "weather_age_minutes",
+]
+UTC_FEATURE_CONTRACT_VERSION = "time-horizon-v1"
+UK_LOCAL_FEATURE_CONTRACT_VERSION = "time-horizon-uk-calendar-v1"
 
 
 class ForecastingContractError(ValueError):
@@ -45,7 +60,7 @@ class BacktestConfig:
     target_tolerance_minutes: int = 5
     min_target_coverage: float = 0.90
     feature_columns: tuple[str, ...] = tuple(DEFAULT_FEATURE_COLUMNS)
-    feature_contract_version: str = "time-horizon-v1"
+    feature_contract_version: str = UTC_FEATURE_CONTRACT_VERSION
 
     def validate(self) -> None:
         if not 0 < self.train_fraction < 1:
@@ -91,6 +106,12 @@ class BacktestConfig:
             )
         if not self.feature_columns:
             raise ForecastingContractError("At least one feature column is required.")
+        if len(set(self.feature_columns)) != len(self.feature_columns):
+            raise ForecastingContractError("feature_columns must not contain duplicates.")
+        if not isinstance(self.feature_contract_version, str) or not self.feature_contract_version.strip():
+            raise ForecastingContractError(
+                "feature_contract_version must be non-empty."
+            )
 
     @property
     def ordered_horizons(self) -> tuple[int, ...]:
@@ -102,24 +123,24 @@ def prepare_feature_frame(
     config: BacktestConfig,
 ) -> pd.DataFrame:
     config.validate()
+    try:
+        prepared = add_uk_local_calendar_features(
+            frame,
+            timestamp_column=TIMESTAMP_COLUMN,
+        )
+    except CalendarFeatureError as exc:
+        raise ForecastingContractError(str(exc)) from exc
     required = {
         *GROUP_COLUMNS,
         TIMESTAMP_COLUMN,
         TARGET_COLUMN,
         *config.feature_columns,
     }
-    missing = sorted(required - set(frame.columns))
+    missing = sorted(required - set(prepared.columns))
     if missing:
         raise ForecastingContractError(
             f"Feature frame is missing required columns: {', '.join(missing)}."
         )
-
-    prepared = frame.copy()
-    prepared[TIMESTAMP_COLUMN] = pd.to_datetime(
-        prepared[TIMESTAMP_COLUMN], utc=True, errors="coerce"
-    )
-    if prepared[TIMESTAMP_COLUMN].isna().any():
-        raise ForecastingContractError("event_timestamp_utc contains invalid values.")
     if prepared[GROUP_COLUMNS].isna().any().any():
         raise ForecastingContractError("Forecast groups must have non-null identity.")
 

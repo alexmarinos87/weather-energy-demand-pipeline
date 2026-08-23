@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "forecast_weather_model_comparison_prediction_v1",
-  "description": "Paired prediction evidence comparing observed-at-feature and target-valid forecast weather.",
+  "title": "forecast_weather_model_comparison_prediction_v2",
+  "description": "Paired prediction evidence comparing observed-at-feature and target-valid forecast weather under UTC or UK-local calendar feature contracts.",
   "type": "object",
   "required": [
     "run_id",
@@ -63,7 +63,10 @@
     "absolute_error_mw": {"type": "number", "minimum": 0},
     "squared_error_mw2": {"type": "number", "minimum": 0},
     "trained_through_utc": {"type": "string", "format": "date-time"},
-    "feature_contract_version": {"type": "string", "const": "time-horizon-v1"},
+    "feature_contract_version": {
+      "type": "string",
+      "enum": ["time-horizon-v1", "time-horizon-uk-calendar-v1"]
+    },
     "forecast_weather_contract_version": {
       "type": "string",
       "const": "target-weather-v1"

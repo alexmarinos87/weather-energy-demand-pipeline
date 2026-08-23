@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from forecasting.calendar_features import add_uk_local_calendar_features
 from forecasting.contracts import (
     GROUP_COLUMNS,
     TARGET_COLUMN,
@@ -119,19 +120,16 @@ def _build_area_frame(
             TARGET_COLUMN: demand_values,
             "temperature": temperatures,
             "humidity": humidities,
-            "hour_of_day_utc": [timestamp.hour for timestamp in timestamps],
-            "day_of_week_utc": [
-                timestamp.dayofweek + 1 for timestamp in timestamps
-            ],
-            "is_weekend_utc": [
-                int(timestamp.dayofweek >= 5) for timestamp in timestamps
-            ],
             "weather_age_minutes": [0.0 for _ in timestamps],
         }
     )
     frame["demand_lag_1"] = frame[TARGET_COLUMN].shift(1)
     frame["demand_rolling_mean_12"] = (
         frame[TARGET_COLUMN].shift(1).rolling(window=12, min_periods=1).mean()
+    )
+    frame = add_uk_local_calendar_features(
+        frame,
+        timestamp_column=TIMESTAMP_COLUMN,
     )
     return frame.iloc[1:].reset_index(drop=True)
 
