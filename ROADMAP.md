@@ -19,14 +19,13 @@ checks pass.
 | G9 | Deterministic approved-candidate evidence bundle, safe archive verification, clean recovery, and recovery re-verification | Implemented |
 | G10a | Immutable non-production Fabric pilot plan bound to approved candidate, verified bundle, verified recovery, code identity, limits, and rollback | Implemented |
 | G10b | Repository/environment preflight and time-bounded human pilot authorization | Implemented |
-| G10c | Immutable operator run receipt, limit assessment, rollback verification, and post-run review evidence | Next |
+| G10c | Immutable operator run receipt, limit assessment, rollback verification, and post-run review evidence | Implemented |
 | G10d | Controlled live Fabric pilot execution | External human operation required |
-| G11 | Post-pilot human decision on whether to continue, revise, or retire the candidate | Planned |
+| G11 | Post-pilot human decision on whether to continue, revise, or retire the candidate | Next |
 
 ## Dependency rules
 
-- Do not execute a pilot merely because a draft plan exists. A current,
-  single-use human authorization is also required.
+- Do not execute a pilot merely because a draft plan exists. A current, single-use human authorization is also required.
 - Do not schedule or promote the forecast-weather path merely because
   ingestion, comparison, monitoring, candidate registration, lifecycle, or
   recovery support exists.
