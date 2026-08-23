@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "controlled_fabric_pilot_run_assessment_v1",
+  "type": "object",
+  "required": [
+    "assessment_id", "assessment_revision", "pilot_id", "receipt_id", "receipt_hash",
+    "authorization_id", "external_run_id", "assessed_at_utc", "checks",
+    "assessment_outcome", "run_status", "rollback_required", "rollback_performed",
+    "check_count", "passed_check_count", "failed_check_count",
+    "post_pilot_human_decision_required", "automatic_model_activation_allowed",
+    "deployment_authorized", "active_model_unchanged", "source_evidence_mutated",
+    "assessment_contract_version", "assessment_hash"
+  ],
+  "properties": {
+    "assessment_id": {"type": "string", "pattern": "^fra-[0-9a-f]{24}$"},
+    "assessment_revision": {"const": 1},
+    "pilot_id": {"type": "string", "pattern": "^fpl-[0-9a-f]{24}$"},
+    "receipt_id": {"type": "string", "pattern": "^fpr-[0-9a-f]{24}$"},
+    "receipt_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "authorization_id": {"type": "string", "pattern": "^fpa-[0-9a-f]{24}$"},
+    "external_run_id": {"type": "string", "minLength": 1},
+    "assessed_at_utc": {"type": "string", "format": "date-time"},
+    "checks": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["check_sequence", "check_scope", "check_name", "passed", "observed_value", "expected_value", "details"],
+        "properties": {
+          "check_sequence": {"type": "integer", "minimum": 1},
+          "check_scope": {"enum": ["authorization", "limits", "execution", "safety", "evidence", "rollback"]},
+          "check_name": {"type": "string", "minLength": 1},
+          "passed": {"type": "boolean"},
+          "observed_value": {"type": "string"},
+          "expected_value": {"type": "string"},
+          "details": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": true
+      }
+    },
+    "assessment_outcome": {"enum": ["eligible_for_post_pilot_review", "pilot_failed"]},
+    "run_status": {"enum": ["completed", "failed", "aborted", "rolled_back"]},
+    "rollback_required": {"type": "boolean"},
+    "rollback_performed": {"type": "boolean"},
+    "check_count": {"type": "integer", "minimum": 1},
+    "passed_check_count": {"type": "integer", "minimum": 0},
+    "failed_check_count": {"type": "integer", "minimum": 0},
+    "post_pilot_human_decision_required": {"const": true},
+    "automatic_model_activation_allowed": {"const": false},
+    "deployment_authorized": {"const": false},
+    "active_model_unchanged": {"type": "boolean"},
+    "source_evidence_mutated": {"const": false},
+    "assessment_contract_version": {"const": "controlled-fabric-pilot-run-assessment-v1"},
+    "assessment_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "additionalProperties": true
+}
