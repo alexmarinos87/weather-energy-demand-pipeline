@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "post_pilot_followthrough_request_v1",
+  "type": "object",
+  "required": [
+    "request_id",
+    "request_revision",
+    "request_state",
+    "pilot_id",
+    "closure_id",
+    "closure_manifest_hash",
+    "closure_archive_sha256",
+    "closure_recovery_verified",
+    "decision_id",
+    "decision_hash",
+    "decision",
+    "candidate_id",
+    "candidate_version",
+    "external_run_id",
+    "followthrough_type",
+    "requested_by",
+    "owner",
+    "review_ticket",
+    "reason",
+    "action_items",
+    "requested_at_utc",
+    "new_pilot_cycle_requested",
+    "candidate_revision_requested",
+    "candidate_retirement_requested",
+    "new_pilot_plan_required",
+    "new_preflight_required",
+    "new_authorization_required",
+    "new_candidate_version_required",
+    "new_evidence_cycle_required",
+    "registry_retirement_review_required",
+    "automatic_execution_allowed",
+    "model_registry_mutation_allowed",
+    "pilot_execution_authorized",
+    "authorization_reuse_allowed",
+    "schedule_activation_allowed",
+    "deployment_authorized",
+    "model_activation_authorized",
+    "active_model_before",
+    "active_model_expected_after",
+    "active_model_unchanged",
+    "closure_mutation_allowed",
+    "source_evidence_mutated",
+    "permanent_deletion_allowed",
+    "followthrough_contract_version",
+    "request_hash"
+  ],
+  "properties": {
+    "request_id": {"type": "string", "pattern": "^pfr-[0-9a-f]{24}$"},
+    "request_revision": {"const": 1},
+    "request_state": {"const": "requested"},
+    "pilot_id": {"type": "string", "pattern": "^fpl-[0-9a-f]{24}$"},
+    "closure_id": {"type": "string", "pattern": "^pcl-[0-9a-f]{24}$"},
+    "closure_manifest_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "closure_archive_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "closure_recovery_verified": {"const": true},
+    "decision_id": {"type": "string", "pattern": "^fpd-[0-9a-f]{24}$"},
+    "decision_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "decision": {
+      "enum": [
+        "continue_evidence_collection",
+        "revise_candidate",
+        "retire_candidate"
+      ]
+    },
+    "candidate_id": {"type": "string", "minLength": 1},
+    "candidate_version": {"type": "string", "minLength": 1},
+    "external_run_id": {"type": "string", "minLength": 1},
+    "followthrough_type": {
+      "enum": [
+        "prepare_new_pilot_cycle",
+        "prepare_candidate_revision",
+        "prepare_registry_retirement_review"
+      ]
+    },
+    "requested_by": {"type": "string", "minLength": 1},
+    "owner": {"type": "string", "minLength": 1},
+    "review_ticket": {"type": "string", "minLength": 1},
+    "reason": {"type": "string", "minLength": 20},
+    "action_items": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "requested_at_utc": {"type": "string", "format": "date-time"},
+    "new_pilot_cycle_requested": {"type": "boolean"},
+    "candidate_revision_requested": {"type": "boolean"},
+    "candidate_retirement_requested": {"type": "boolean"},
+    "new_pilot_plan_required": {"type": "boolean"},
+    "new_preflight_required": {"type": "boolean"},
+    "new_authorization_required": {"type": "boolean"},
+    "new_candidate_version_required": {"type": "boolean"},
+    "new_evidence_cycle_required": {"type": "boolean"},
+    "registry_retirement_review_required": {"type": "boolean"},
+    "automatic_execution_allowed": {"const": false},
+    "model_registry_mutation_allowed": {"const": false},
+    "pilot_execution_authorized": {"const": false},
+    "authorization_reuse_allowed": {"const": false},
+    "schedule_activation_allowed": {"const": false},
+    "deployment_authorized": {"const": false},
+    "model_activation_authorized": {"const": false},
+    "active_model_before": {"const": "ridge_weather_lag"},
+    "active_model_expected_after": {"const": "ridge_weather_lag"},
+    "active_model_unchanged": {"const": true},
+    "closure_mutation_allowed": {"const": false},
+    "source_evidence_mutated": {"const": false},
+    "permanent_deletion_allowed": {"const": false},
+    "followthrough_contract_version": {"const": "post-pilot-followthrough-request-v1"},
+    "request_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"decision": {"const": "continue_evidence_collection"}}
+      },
+      "then": {
+        "properties": {
+          "followthrough_type": {"const": "prepare_new_pilot_cycle"},
+          "new_pilot_cycle_requested": {"const": true},
+          "candidate_revision_requested": {"const": false},
+          "candidate_retirement_requested": {"const": false},
+          "new_pilot_plan_required": {"const": true},
+          "new_preflight_required": {"const": true},
+          "new_authorization_required": {"const": true},
+          "new_candidate_version_required": {"const": false},
+          "new_evidence_cycle_required": {"const": true},
+          "registry_retirement_review_required": {"const": false}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"decision": {"const": "revise_candidate"}}},
+      "then": {
+        "properties": {
+          "followthrough_type": {"const": "prepare_candidate_revision"},
+          "new_pilot_cycle_requested": {"const": false},
+          "candidate_revision_requested": {"const": true},
+          "candidate_retirement_requested": {"const": false},
+          "new_pilot_plan_required": {"const": false},
+          "new_preflight_required": {"const": false},
+          "new_authorization_required": {"const": false},
+          "new_candidate_version_required": {"const": true},
+          "new_evidence_cycle_required": {"const": true},
+          "registry_retirement_review_required": {"const": false}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"decision": {"const": "retire_candidate"}}},
+      "then": {
+        "properties": {
+          "followthrough_type": {"const": "prepare_registry_retirement_review"},
+          "new_pilot_cycle_requested": {"const": false},
+          "candidate_revision_requested": {"const": false},
+          "candidate_retirement_requested": {"const": true},
+          "new_pilot_plan_required": {"const": false},
+          "new_preflight_required": {"const": false},
+          "new_authorization_required": {"const": false},
+          "new_candidate_version_required": {"const": false},
+          "new_evidence_cycle_required": {"const": false},
+          "registry_retirement_review_required": {"const": true}
+        }
+      }
+    }
+  ],
+  "additionalProperties": true
+}
