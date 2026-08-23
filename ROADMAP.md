@@ -15,7 +15,7 @@ checks pass.
 | G7a | Content-hashed evidence inventory and dry-run retention, compaction, quarantine, and cost plan | Implemented |
 | G7b | Explicit reversible quarantine and hash-verified restore with no permanent deletion | Implemented |
 | G7c | Schema-compatible compacted shadow outputs with source-manifest verification and no source replacement | Implemented |
-| G8 | GitHub `main` protection and required CI status checks | Repository setting required |
+| G8 | GitHub `main` protection and required CI status checks; connector support required | Next |
 | G9 | Deterministic approved-candidate evidence bundle, safe archive verification, clean recovery, and recovery re-verification | Implemented |
 | G10a | Immutable non-production Fabric pilot plan bound to approved candidate, verified bundle, verified recovery, code identity, limits, and rollback | Implemented |
 | G10b | Repository/environment preflight and time-bounded human pilot authorization | Implemented |
@@ -26,7 +26,7 @@ checks pass.
 | G13 | Remove misleading zero-byte SQL placeholders and enforce non-empty tracked implementation artifacts | Implemented |
 | G14 | Current Node 24-compatible GitHub Actions pinned to reviewed commits with read-only token and no persisted checkout credentials | Implemented |
 | G15 | Fully pinned Python 3.11/Linux transitive constraints used by CI and verified against the installed environment | Implemented |
-| G16 | Consolidated capability index and one-command credential-free local product demo in the main README | Next |
+| G16 | Consolidated capability index and one-command credential-free local product demo with a hash-verified manifest | Implemented |
 
 ## Dependency rules
 
@@ -75,8 +75,10 @@ checks pass.
   credentials.
 - Python dependency resolution used by CI must be reproducible, platform-named,
   exact, compatibility-checked, and refreshed only through a reviewed change.
-- The main README should lead with one obvious credential-free product journey
-  before exposing the advanced evidence-governance controls.
+- The main README must lead with one obvious credential-free product journey
+  before exposing advanced evidence-governance controls.
+- The portfolio demo is local evidence only and must keep every live-source,
+  Fabric, schedule, promotion, and publication side-effect flag false.
 
 ## Reusable PR workflow
 
