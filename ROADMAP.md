@@ -25,7 +25,8 @@ checks pass.
 | G12 | Reproducible user-facing demand/weather analytics report and valid thin-client notebooks | Implemented |
 | G13 | Remove misleading zero-byte SQL placeholders and enforce non-empty tracked implementation artifacts | Implemented |
 | G14 | Current Node 24-compatible GitHub Actions pinned to reviewed commits with read-only token and no persisted checkout credentials | Implemented |
-| G15 | Fully pinned transitive Python constraints used by CI and checked against direct requirements | Next |
+| G15 | Fully pinned Python 3.11/Linux transitive constraints used by CI and verified against the installed environment | Implemented |
+| G16 | Consolidated capability index and one-command credential-free local product demo in the main README | Next |
 
 ## Dependency rules
 
@@ -72,8 +73,10 @@ checks pass.
 - GitHub Actions must be pinned to reviewed commit SHAs, use the current action
   runtime, retain read-only token permissions, and avoid persisted checkout
   credentials.
-- Python dependency resolution used by CI must be reproducible and refreshed
-  only through a reviewed change.
+- Python dependency resolution used by CI must be reproducible, platform-named,
+  exact, compatibility-checked, and refreshed only through a reviewed change.
+- The main README should lead with one obvious credential-free product journey
+  before exposing the advanced evidence-governance controls.
 
 ## Reusable PR workflow
 

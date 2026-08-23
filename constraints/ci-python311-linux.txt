@@ -1,0 +1,27 @@
+# Fully pinned Python 3.11 / Ubuntu 24.04 CI resolution.
+# Refreshed from the successful PR #41 environment and verified by pip check.
+# Update only through a reviewed change that runs the complete repository suite.
+
+attrs==26.1.0
+certifi==2026.1.4
+charset-normalizer==3.4.4
+idna==3.11
+iniconfig==2.3.0
+jsonschema==4.25.1
+jsonschema-specifications==2025.9.1
+numpy==2.4.6
+packaging==26.3
+pandas==2.2.3
+pluggy==1.6.0
+pyarrow==16.1.0
+pytest==8.3.4
+python-dateutil==2.9.0.post0
+pytz==2026.3.post1
+PyYAML==6.0.3
+referencing==0.37.0
+requests==2.32.5
+rpds-py==2026.6.3
+six==1.17.0
+typing-extensions==4.16.0
+tzdata==2026.3
+urllib3==2.6.3
