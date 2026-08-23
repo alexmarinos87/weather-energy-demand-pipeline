@@ -23,7 +23,8 @@ checks pass.
 | G10d | Controlled live Fabric pilot execution | External human operation required |
 | G11 | Immutable named post-pilot decision to continue evidence collection, revise, or retire without automatic action | Implemented |
 | G12 | Reproducible user-facing demand/weather analytics report and valid thin-client notebooks | Implemented |
-| G13 | Resolve remaining zero-byte tracked SQL placeholders and prevent misleading empty source artifacts | Next |
+| G13 | Remove misleading zero-byte SQL placeholders and enforce non-empty tracked implementation artifacts | Implemented |
+| G14 | Move CI to current Node 24-compatible, commit-pinned GitHub Actions and verify action provenance | Next |
 
 ## Dependency rules
 
@@ -67,6 +68,8 @@ checks pass.
   data and must not require live source calls in CI.
 - Tracked source, notebook, SQL, and operating-document artifacts must not be
   empty placeholders that imply an implementation which does not exist.
+- GitHub Actions must be pinned to reviewed commit SHAs and must not rely on a
+  deprecated action runtime.
 
 ## Reusable PR workflow
 
