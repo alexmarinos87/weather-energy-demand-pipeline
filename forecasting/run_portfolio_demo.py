@@ -13,7 +13,7 @@ from forecasting.portfolio_demo import (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Run one credential-free local weather/energy product journey and "
+            "Run one credential-free multi-area weather/energy product journey and "
             "write immutable baseline, comparison, analytics, and manifest evidence."
         )
     )
@@ -46,6 +46,11 @@ def main(argv: list[str] | None = None) -> int:
                 "demo_run_id": manifest["demo_run_id"],
                 "manifest_path": str(manifest_path),
                 "artifact_count": len(manifest["artifacts"]),
+                "source_groups": manifest["source_groups"],
+                "source_areas": [
+                    binding["source_area"]
+                    for binding in manifest["source_bindings"]
+                ],
                 "demand_horizons_minutes": manifest[
                     "demand_horizons_minutes"
                 ],
