@@ -274,10 +274,6 @@ def verify_portfolio_interval_evidence(
     upper = pd.to_numeric(intervals["upper_prediction_mw"], errors="coerce")
     width = pd.to_numeric(intervals["interval_width_mw"], errors="coerce")
     actual = pd.to_numeric(intervals["actual_demand_mw"], errors="coerce")
-    # Coverage is a persisted contract field generated from the stored inclusive
-    # bounds. Numeric tolerance protects bound/width consistency checks below,
-    # but must not silently reclassify a retained coverage decision.
-    covered = (lower <= actual) & (actual <= upper)
     if not (
         (lower <= point + INTERVAL_EDGE_TOLERANCE_MW)
         & (point <= upper + INTERVAL_EDGE_TOLERANCE_MW)
@@ -288,12 +284,19 @@ def verify_portfolio_interval_evidence(
         )
     ).all():
         raise PortfolioIntervalError("Portfolio interval bounds are invalid.")
+
     retained_covered = intervals["interval_covered"].astype(str).str.lower().map(
         {"true": True, "false": False}
     )
-    if retained_covered.isna().any() or not (
-        retained_covered.to_numpy() == covered.to_numpy()
-    ).all():
+    exact_covered = (lower <= actual) & (actual <= upper)
+    edge_ambiguous = (
+        ((actual - lower).abs() <= INTERVAL_EDGE_TOLERANCE_MW)
+        | ((actual - upper).abs() <= INTERVAL_EDGE_TOLERANCE_MW)
+    )
+    inconsistent = retained_covered != exact_covered
+    if retained_covered.isna().any() or (
+        inconsistent & ~edge_ambiguous
+    ).any():
         raise PortfolioIntervalError(
             "Portfolio interval coverage flags are inconsistent."
         )
