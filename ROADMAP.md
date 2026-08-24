@@ -36,13 +36,14 @@ checks pass.
 | G21a | Paired area-and-horizon model-family scorecards across persistence, seasonal, UTC-calendar ridge, and UK-local-calendar ridge evidence | Implemented locally |
 | G21b | Multi-area portfolio-demo integration for independently validated seasonal evidence | Implemented |
 | G21c | Multi-area portfolio-demo integration for independently validated interval evidence | Implemented |
-| G22 | Interval coverage, width, calibration-history, and freshness monitoring without automatic recalibration | Next |
+| G22 | Interval coverage, width, calibration-history, and freshness monitoring without automatic recalibration | Implemented as advisory local evidence |
+| G23 | Fabric parity for advisory interval monitoring over retained interval metrics without automatic recalibration | Next |
 
 ## Product-quality sequence
 
-The next product-quality work should add interval calibration, empirical-coverage,
-width, and freshness monitoring without automatic recalibration, model changes,
-schedule changes, or promotion changes.
+The next product-quality work should add optional/manual Fabric parity for the
+same interval freshness, calibration-history, empirical-coverage, and width
+checks while preserving the local policy and every no-automatic-action boundary.
 
 ## Dependency rules
 
@@ -129,6 +130,9 @@ schedule changes, or promotion changes.
 - Interval monitoring may warn about calibration, coverage, width, or freshness
   but must not automatically change a radius, model, schedule, or promotion
   state.
+- Fabric interval monitoring must consume retained interval metrics, preserve
+  the same slice and threshold semantics as the local monitor, and remain an
+  optional manual subflow with no recalibration or promotion authority.
 
 ## Reusable PR workflow
 
