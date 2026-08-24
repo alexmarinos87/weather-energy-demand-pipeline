@@ -119,10 +119,9 @@ def test_fabric_interval_pipeline_is_manual_non_promoting_and_non_refitting():
     assert "Do not enable a trigger" in pipeline
 
 
-def test_roadmap_records_interval_parity_and_advances_to_portfolio_seasonal_evidence():
+def test_roadmap_records_seasonal_portfolio_integration_and_advances_to_intervals():
     roadmap = text("ROADMAP.md")
     assert "G20b | Fabric parity for calibration-only prediction intervals" in roadmap
-    assert "Implemented as an optional manual subflow" in roadmap
     assert "G21a | Paired area-and-horizon model-family scorecards" in roadmap
-    assert "G21b | Multi-area portfolio-demo integration for independently validated seasonal evidence" in roadmap
-    assert "| Next |" in roadmap
+    assert "G21b | Multi-area portfolio-demo integration for independently validated seasonal evidence | Implemented" in roadmap
+    assert "G21c | Multi-area portfolio-demo integration for independently validated interval evidence | Next" in roadmap

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "portfolio_demo_manifest_v2",
+  "title": "portfolio_demo_manifest_v3",
   "type": "object",
   "required": [
     "demo_run_id",
@@ -13,6 +13,12 @@
     "demand_horizons_minutes",
     "baseline_models",
     "comparison_models",
+    "seasonal_models",
+    "model_family_models",
+    "calendar_feature_contract_versions",
+    "seasonal_reference_periods_minutes",
+    "seasonal_source_cadence_minutes",
+    "seasonal_demo_days",
     "artifacts",
     "credential_free",
     "live_source_calls_performed",
@@ -63,19 +69,58 @@
     "baseline_models": {
       "type": "array",
       "minItems": 2,
+      "maxItems": 2,
       "uniqueItems": true,
-      "items": {"type": "string", "minLength": 1}
+      "items": {
+        "enum": ["persistence_current_value", "ridge_weather_lag"]
+      }
     },
     "comparison_models": {
       "type": "array",
       "minItems": 2,
+      "maxItems": 2,
       "uniqueItems": true,
-      "items": {"type": "string", "minLength": 1}
+      "items": {"enum": ["ridge_weather_lag", "ridge_target_weather"]}
     },
+    "seasonal_models": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "persistence_current_value",
+          "seasonal_previous_day",
+          "seasonal_previous_week",
+          "ridge_weather_lag"
+        ]
+      }
+    },
+    "model_family_models": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "persistence_current_value",
+          "seasonal_previous_day",
+          "seasonal_previous_week",
+          "ridge_weather_lag_utc",
+          "ridge_weather_lag_uk_local"
+        ]
+      }
+    },
+    "calendar_feature_contract_versions": {
+      "const": ["time-horizon-v1", "time-horizon-uk-calendar-v1"]
+    },
+    "seasonal_reference_periods_minutes": {"const": [1440, 10080]},
+    "seasonal_source_cadence_minutes": {"const": 30},
+    "seasonal_demo_days": {"type": "integer", "minimum": 9},
     "artifacts": {
       "type": "array",
-      "minItems": 12,
-      "maxItems": 12,
+      "minItems": 20,
+      "maxItems": 20,
       "uniqueItems": true,
       "items": {
         "type": "object",
@@ -88,9 +133,34 @@
           "row_count"
         ],
         "properties": {
-          "artifact_role": {"type": "string", "minLength": 1},
+          "artifact_role": {
+            "enum": [
+              "demo_features",
+              "demo_source_area_summary",
+              "demo_forecast_weather",
+              "baseline_predictions",
+              "baseline_metrics",
+              "weather_comparison_predictions",
+              "weather_comparison_metrics",
+              "demand_weather_overview",
+              "hourly_load_profile",
+              "temperature_demand_profile",
+              "peak_demand_events",
+              "demand_weather_markdown",
+              "seasonal_demo_features",
+              "seasonal_utc_predictions",
+              "seasonal_utc_metrics",
+              "seasonal_uk_local_predictions",
+              "seasonal_uk_local_metrics",
+              "model_family_scorecard",
+              "model_family_pairwise_metrics",
+              "model_family_summary_markdown"
+            ]
+          },
           "relative_path": {"type": "string", "minLength": 1},
-          "content_type": {"enum": ["text/csv", "application/x-parquet", "text/markdown"]},
+          "content_type": {
+            "enum": ["text/csv", "application/x-parquet", "text/markdown"]
+          },
           "size_bytes": {"type": "integer", "minimum": 1},
           "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
           "row_count": {"type": ["integer", "null"], "minimum": 1}
@@ -104,7 +174,7 @@
     "schedule_activation_performed": {"const": false},
     "model_promotion_performed": {"const": false},
     "external_publication_performed": {"const": false},
-    "manifest_contract_version": {"const": "portfolio-demo-manifest-v2"},
+    "manifest_contract_version": {"const": "portfolio-demo-manifest-v3"},
     "manifest_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
   },
   "additionalProperties": true
