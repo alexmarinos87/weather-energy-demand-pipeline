@@ -125,6 +125,26 @@ def test_portfolio_interval_verifier_accepts_complete_reopened_evidence():
     assert "unconditional future guarantee" in evidence["markdown"]
 
 
+def test_portfolio_interval_verifier_does_not_reclassify_persisted_edge_flags():
+    evidence = build()
+    frames = {
+        role: frame.copy() for role, frame in evidence["frames"].items()
+    }
+    intervals = frames["prediction_intervals"]
+    intervals.loc[0, "lower_prediction_mw"] = 0.0
+    intervals.loc[0, "point_prediction_mw"] = 0.5
+    intervals.loc[0, "upper_prediction_mw"] = 1.0
+    intervals.loc[0, "actual_demand_mw"] = 1.0 + 5e-10
+    intervals.loc[0, "interval_width_mw"] = 1.0
+    intervals.loc[0, "interval_covered"] = False
+
+    verify_portfolio_interval_evidence(
+        manifest=evidence["manifest"],
+        frames_by_role=frames,
+        expected_source_areas={"east_midlands"},
+    )
+
+
 def test_portfolio_interval_verifier_rejects_causal_tampering():
     evidence = build()
     frames = {
