@@ -7,14 +7,19 @@ health evidence. It monitors freshness, causal calibration history, empirical
 coverage, and interval width without recalibrating a radius, refitting or
 changing a model, activating a schedule, or promoting anything.
 
-The monitor is advisory and local. A failed check is evidence for human review,
-not permission to mutate forecasting state.
+The same advisory contract now exists in two deliberately separate runtimes:
+
+- the local pandas CLI over CSV/Parquet evidence; and
+- an optional/manual Microsoft Fabric subflow over retained Delta metrics.
+
+A failed check is evidence for human review, not permission to mutate
+forecasting state.
 
 ## Input
 
-Supply one CSV/Parquet metric file or a directory containing immutable
-`prediction_interval_metrics_<run-id>` outputs created by
-`forecasting.run_prediction_intervals` or equivalent exported Fabric metrics.
+Supply one CSV/Parquet metric file, a directory containing immutable
+`prediction_interval_metrics_<run-id>` outputs, or retained rows from the Fabric
+`forecast_prediction_interval_metrics` table.
 
 Every row must retain one exact monitoring slice:
 
@@ -24,8 +29,8 @@ feature contract / target coverage / interval contract
 ```
 
 Runs are ordered by `interval_run_timestamp_utc`. Duplicate run/slice rows,
-timezone-naive timestamps, non-positive observation counts, invalid coverage,
-and evaluation evidence ending after its interval run are rejected.
+timezone-naive local timestamps, non-positive observation counts, invalid
+coverage, and evaluation evidence ending after its interval run are rejected.
 
 ## Windows
 
@@ -85,7 +90,7 @@ warning  -> no error failed, but at least one warning failed
 healthy  -> every emitted check passed
 ```
 
-The summary always records all of the following as `false`:
+Every local and Fabric summary records all of the following as `false`:
 
 ```text
 automatic_remediation_allowed
@@ -116,15 +121,59 @@ prediction_interval_health_checks_<run-id>.parquet
 prediction_interval_health_summary_<run-id>.parquet
 ```
 
+## Optional/manual Fabric parity
+
+The Fabric subflow is:
+
+```text
+forecast_prediction_interval_metrics
+        ↓
+05f_prediction_interval_monitoring
+        ↓
+forecast_prediction_interval_health_checks
+forecast_prediction_interval_health_summary
+        ↓
+06f_prediction_interval_monitoring_quality_checks
+        ↓
+dq_run_results
+```
+
+`05f_prediction_interval_monitoring` applies the same recent/reference windows,
+freshness limits, calibration minimums, weighted coverage/width calculations,
+drift thresholds, statuses, policy version, and no-automatic-action fields as
+the local monitor. Processing is bounded to the configured recent plus
+reference run counts for every exact slice.
+
+`06f_prediction_interval_monitoring_quality_checks` independently validates:
+
+- required fields and one check identity per slice/name;
+- complete hard/base checks;
+- drift checks only when reference history is sufficient;
+- comparator and persisted pass/fail consistency;
+- binding of every latest interval run to retained source metrics;
+- summary counts and status;
+- policy and monitoring contract versions; and
+- all five authority fields remaining false.
+
+Run it manually from
+`fabric/pipelines/prediction_interval_monitoring_pipeline.md`. No alert delivery
+or trigger is configured.
+
 ## Contracts
 
 - `data-contracts/prediction_interval_health_check_schema.json`
 - `data-contracts/prediction_interval_health_summary_schema.json`
+
+Both runtimes use:
+
+```text
+policy_version=prediction-interval-monitoring-policy-v1
+monitoring_contract_version=prediction-interval-monitoring-v1
+```
 
 ## Boundary
 
 This increment does not call a live source, fit or refit a model, alter a
 calibration radius, modify retained interval evidence, deliver an alert,
 activate a schedule, register or promote a candidate, deploy infrastructure, or
-publish externally. Optional/manual Fabric parity remains a separate reviewed
-increment.
+publish externally. Fabric outputs are optional/manual retained evidence only.

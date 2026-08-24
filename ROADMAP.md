@@ -37,13 +37,16 @@ checks pass.
 | G21b | Multi-area portfolio-demo integration for independently validated seasonal evidence | Implemented |
 | G21c | Multi-area portfolio-demo integration for independently validated interval evidence | Implemented |
 | G22 | Interval coverage, width, calibration-history, and freshness monitoring without automatic recalibration | Implemented as advisory local evidence |
-| G23 | Fabric parity for advisory interval monitoring over retained interval metrics without automatic recalibration | Next |
+| G23 | Fabric parity for advisory interval monitoring over retained interval metrics without automatic recalibration | Implemented as an optional manual subflow |
+| G24 | Multi-area portfolio-demo integration for repeated interval-health evidence and advisory operator reporting | Next |
 
 ## Product-quality sequence
 
-The next product-quality work should add optional/manual Fabric parity for the
-same interval freshness, calibration-history, empirical-coverage, and width
-checks while preserving the local policy and every no-automatic-action boundary.
+The next product-quality work should create a credential-free repeated interval
+history for every contracted source area, run the shared advisory monitor over
+that retained history, and add a manifest-bound operator report without
+automatic recalibration, model changes, schedule changes, promotion changes, or
+alert delivery.
 
 ## Dependency rules
 
@@ -130,9 +133,12 @@ checks while preserving the local policy and every no-automatic-action boundary.
 - Interval monitoring may warn about calibration, coverage, width, or freshness
   but must not automatically change a radius, model, schedule, or promotion
   state.
-- Fabric interval monitoring must consume retained interval metrics, preserve
-  the same slice and threshold semantics as the local monitor, and remain an
-  optional manual subflow with no recalibration or promotion authority.
+- Fabric interval monitoring must reuse retained interval metrics, preserve the
+  exact monitoring slice, bound recent/reference history, validate its own
+  retained checks and summary independently, and remain optional and manual.
+- Repeated portfolio interval-health evidence must bind each synthetic run,
+  health check, summary, and operator report into one immutable manifest while
+  preserving all source-area identities and no-side-effect flags.
 
 ## Reusable PR workflow
 
