@@ -5,9 +5,9 @@
 - Lakehouse: `weather_energy_lakehouse`
 - Environment: `weather_energy_env`
 - Ordinary notebooks: `01_ingest_api_to_bronze`, `02_bronze_to_silver`, `03_build_gold_tables`, `04_data_quality_checks`, `05_baseline_forecasting`, `06_forecast_quality_checks`
-- Optional/manual evidence notebooks: `05c_target_weather_model_comparison`, `06c_target_weather_comparison_quality_checks`, `05d_seasonal_baseline_comparison`, `06d_seasonal_baseline_quality_checks`, `05e_prediction_intervals`, `06e_prediction_interval_quality_checks`
+- Optional/manual evidence notebooks: `05c_target_weather_model_comparison`, `06c_target_weather_comparison_quality_checks`, `05d_seasonal_baseline_comparison`, `06d_seasonal_baseline_quality_checks`, `05e_prediction_intervals`, `06e_prediction_interval_quality_checks`, `05f_prediction_interval_monitoring`, `06f_prediction_interval_monitoring_quality_checks`
 - Data Factory pipeline: `weather_energy_demand_pipeline`
-- Manual subflows: `seasonal_baseline_comparison_pipeline`, `prediction_interval_pipeline`
+- Manual subflows: `seasonal_baseline_comparison_pipeline`, `prediction_interval_pipeline`, `prediction_interval_monitoring_pipeline`
 
 Attach the Lakehouse and Environment to every notebook.
 
@@ -28,6 +28,8 @@ Contracts uploaded to `Files/data-contracts/`:
 - `rolling_origin_evaluation_schema.json`
 - `prediction_interval_schema.json`
 - `prediction_interval_metrics_schema.json`
+- `prediction_interval_health_check_schema.json`
+- `prediction_interval_health_summary_schema.json`
 
 Ordinary tables:
 
@@ -48,6 +50,8 @@ Optional/manual evidence tables:
 - `forecast_seasonal_comparison_metrics`
 - `forecast_prediction_intervals`
 - `forecast_prediction_interval_metrics`
+- `forecast_prediction_interval_health_checks`
+- `forecast_prediction_interval_health_summary`
 
 ## Required source binding
 
@@ -87,6 +91,24 @@ Manual interval parameters are documented separately in
 POINT_PREDICTION_RUN_ID
 COVERAGE_LEVELS=0.80,0.90,0.95
 MIN_CALIBRATION_ROWS=24
+```
+
+Manual interval-monitoring parameters are documented in
+`fabric/pipelines/prediction_interval_monitoring_pipeline.md`:
+
+```text
+AS_OF_UTC=<optional timezone-aware boundary>
+RECENT_INTERVAL_RUN_COUNT=3
+REFERENCE_INTERVAL_RUN_COUNT=6
+MIN_RECENT_INTERVAL_RUNS=2
+MIN_REFERENCE_INTERVAL_RUNS=3
+MAX_INTERVAL_RUN_AGE_MINUTES=10080
+MAX_EVALUATION_AGE_MINUTES=20160
+MIN_CALIBRATION_OBSERVATION_COUNT=24
+MAX_RECENT_COVERAGE_SHORTFALL_PCT_POINTS=5.0
+MAX_COVERAGE_DROP_PCT_POINTS=5.0
+MAX_AVERAGE_INTERVAL_WIDTH_INCREASE_PCT=25.0
+MAX_CALIBRATION_HISTORY_DROP_PCT=25.0
 ```
 
 ## Bounded time-horizon forecasting
@@ -146,6 +168,36 @@ test origin.
 The interval subflow is manual. Empirical coverage is retained evidence and not
 a guarantee after distribution shift.
 
+## Advisory prediction-interval monitoring parity
+
+`05f_prediction_interval_monitoring` consumes retained
+`forecast_prediction_interval_metrics`. It applies the same
+`prediction-interval-monitoring-policy-v1` contract as the local pandas monitor
+without creating or recalibrating an interval.
+
+For each exact source-area/resource/city/horizon/model/feature-contract/
+coverage-level/interval-contract slice, it:
+
+1. ranks retained interval runs newest-first;
+2. bounds processing to the configured recent and immediately preceding
+   reference windows;
+3. weights empirical coverage and average interval width by retained evaluation
+   row count;
+4. checks recent history, run freshness, evaluation freshness, minimum causal
+   calibration history, and recent coverage shortfall;
+5. emits coverage, width, and calibration-history drift warnings only when
+   sufficient reference history exists; and
+6. appends health checks and one summary row to separate Delta tables.
+
+`06f_prediction_interval_monitoring_quality_checks` independently validates
+required fields, check identity and completeness, conditional drift checks,
+comparator outcomes, binding to retained source metrics, summary counts/status,
+contract versions, and the five no-automatic-action fields.
+
+The monitoring subflow is manual and advisory. It does not deliver an alert,
+change a radius, select or refit a model, activate a schedule, or alter registry,
+promotion, deployment, or infrastructure state.
+
 ## Deployment
 
 1. Create the Lakehouse and Environment.
@@ -158,10 +210,12 @@ a guarantee after distribution shift.
 8. Keep `EVALUATION_MODE=holdout` for the ordinary run, or select `rolling-origin` with a reviewed fold count.
 9. Run ingestion, silver, gold, source/gold quality, forecasting, and forecast quality once manually.
 10. Run the seasonal and interval subflows manually when reviewed evidence is required.
-11. Inspect requested horizon, actual delay, target coverage, evaluation contract, origin evidence, model metrics, interval coverage/width, and `dq_run_results`.
-12. Create SQL endpoint views only when stable analyst-facing names are useful.
-13. Enable the ordinary schedule after quota and capacity validation; do not schedule the evidence subflows by default.
+11. After several interval runs exist, run the interval-monitoring subflow manually and inspect its independent quality gate.
+12. Inspect requested horizon, actual delay, target coverage, evaluation contract, origin evidence, model metrics, interval coverage/width, interval health, and `dq_run_results`.
+13. Create SQL endpoint views only when stable analyst-facing names are useful.
+14. Enable the ordinary schedule after quota and capacity validation; do not schedule the evidence subflows by default.
 
 Spark Delta tables are canonical. SQL endpoint views are pass-through views,
 avoiding a second implementation of joins, feature windows, target matching,
-origin construction, calibration, interval construction, or model logic.
+origin construction, calibration, interval construction, monitoring windows,
+or health logic.

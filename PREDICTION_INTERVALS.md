@@ -7,7 +7,8 @@ validation and test point-prediction evidence into symmetric prediction
 intervals without refitting the underlying model and without using test labels
 to choose interval width.
 
-The same contract now exists in two deliberately separate runtimes:
+The same interval-construction contract exists in two deliberately separate
+runtimes:
 
 - the local pandas CLI; and
 - an optional/manual Microsoft Fabric subflow over retained seasonal-comparison
@@ -171,17 +172,50 @@ Fabric evidence retains the final test fold, total origin count, origin cutoff,
 and evaluation-contract version in addition to the local
 `evaluation_origin_fold` field.
 
+## Longitudinal monitoring
+
+Repeated local or exported interval metric runs can be monitored with:
+
+```bash
+python -m forecasting.run_interval_monitoring \
+  --interval-metrics data/forecasting/prediction_intervals \
+  --output-dir data/monitoring/prediction_intervals \
+  --output-format parquet
+```
+
+The optional/manual Fabric parity subflow is:
+
+```text
+05f_prediction_interval_monitoring
+        ↓ advisory health checks and summary Delta evidence
+06f_prediction_interval_monitoring_quality_checks
+        ↓ blocking evidence-contract validation in dq_run_results
+```
+
+Both monitors compare exact source/model/horizon/coverage slices, preserve
+recent and immediately preceding reference windows, and report freshness,
+minimum causal calibration history, empirical coverage shortfall, coverage
+drift, interval-width growth, and calibration-history decline.
+
+Monitoring never recalibrates a radius or changes a model, schedule, registry,
+promotion, deployment, or alert destination. See `INTERVAL_MONITORING.md` and
+`fabric/pipelines/prediction_interval_monitoring_pipeline.md`.
+
 ## Contracts
 
 - `data-contracts/prediction_interval_schema.json`
 - `data-contracts/prediction_interval_metrics_schema.json`
+- `data-contracts/prediction_interval_health_check_schema.json`
+- `data-contracts/prediction_interval_health_summary_schema.json`
 
-Both schemas allow additional Fabric lineage and origin fields while preserving
-the same required causal interval contract.
+The prediction schemas allow additional Fabric lineage and origin fields while
+preserving the same required causal interval contract. The health schemas bind
+the shared local/Fabric advisory monitoring contract.
 
 ## Boundary
 
-Neither implementation performs a source call, model fit, model refit,
-registration, promotion, schedule activation, deployment, or publication.
-Portfolio-demo integration and interval coverage/width monitoring remain
-separate reviewed layers.
+Neither interval construction nor monitoring performs a source call, model fit,
+model refit, automatic recalibration, registration, promotion, schedule
+activation, deployment, alert delivery, or publication. Portfolio-demo
+interval evidence is already retained separately; repeated portfolio
+interval-health evidence remains a later reviewed layer.
