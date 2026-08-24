@@ -18,44 +18,46 @@ MODELS = (
     "seasonal_previous_week",
     "ridge_weather_lag",
 )
+HORIZONS = (30, 60)
 
 
 def point_predictions() -> pd.DataFrame:
     start = pd.Timestamp("2026-01-01T00:00:00Z")
     rows = []
-    for split, count, offset in (
-        ("validation", 30, 0),
-        ("test", 6, 36),
-    ):
-        for index in range(count):
-            feature = start + pd.Timedelta(minutes=5 * (offset + index))
-            target = feature + pd.Timedelta(minutes=30)
-            actual = 100.0 + index
-            errors = {
-                "persistence_current_value": 4.0,
-                "seasonal_previous_day": 3.0,
-                "seasonal_previous_week": 2.0,
-                "ridge_weather_lag": 1.0,
-            }
-            for model_name, error in errors.items():
-                rows.append(
-                    {
-                        "run_id": "seasonal-run",
-                        "source_area": "east_midlands",
-                        "resource_id": "resource-1",
-                        "city": "Nottingham,GB",
-                        "feature_timestamp_utc": feature,
-                        "event_timestamp_utc": target,
-                        "requested_horizon_minutes": 30,
-                        "split": split,
-                        "model_name": model_name,
-                        "actual_demand_mw": actual,
-                        "predicted_demand_mw": actual + error,
-                        "trained_through_utc": start
-                        - pd.Timedelta(hours=1),
-                        "feature_contract_version": "time-horizon-v1",
-                    }
-                )
+    for horizon in HORIZONS:
+        for split, count, offset in (
+            ("validation", 30, 0),
+            ("test", 6, 36),
+        ):
+            for index in range(count):
+                feature = start + pd.Timedelta(minutes=5 * (offset + index))
+                target = feature + pd.Timedelta(minutes=horizon)
+                actual = 100.0 + index + horizon / 100.0
+                errors = {
+                    "persistence_current_value": 4.0,
+                    "seasonal_previous_day": 3.0,
+                    "seasonal_previous_week": 2.0,
+                    "ridge_weather_lag": 1.0,
+                }
+                for model_name, error in errors.items():
+                    rows.append(
+                        {
+                            "run_id": "seasonal-run",
+                            "source_area": "east_midlands",
+                            "resource_id": "resource-1",
+                            "city": "Nottingham,GB",
+                            "feature_timestamp_utc": feature,
+                            "event_timestamp_utc": target,
+                            "requested_horizon_minutes": horizon,
+                            "split": split,
+                            "model_name": model_name,
+                            "actual_demand_mw": actual,
+                            "predicted_demand_mw": actual + error,
+                            "trained_through_utc": start
+                            - pd.Timedelta(hours=1),
+                            "feature_contract_version": "time-horizon-v1",
+                        }
+                    )
     return pd.DataFrame(rows)
 
 
@@ -67,17 +69,18 @@ def build():
     )
 
 
-def test_portfolio_interval_builder_retains_four_models_and_three_levels():
+def test_portfolio_interval_builder_retains_four_models_three_levels_and_two_horizons():
     evidence = build()
     intervals = evidence["frames"]["prediction_intervals"]
     metrics = evidence["frames"]["prediction_interval_metrics"]
     summary = evidence["frames"]["interval_coverage_summary"]
     assert set(intervals["model_name"]) == set(MODELS)
     assert set(metrics["model_name"]) == set(MODELS)
+    assert set(intervals["requested_horizon_minutes"].astype(int)) == set(HORIZONS)
     assert set(intervals["target_coverage_level"]) == set(
         INTERVAL_COVERAGE_LEVELS
     )
-    assert len(summary) == len(INTERVAL_COVERAGE_LEVELS)
+    assert len(summary) == len(HORIZONS) * len(INTERVAL_COVERAGE_LEVELS)
     assert set(summary["model_count"]) == {4}
     assert intervals["calibration_observation_count"].min() >= (
         MIN_INTERVAL_CALIBRATION_ROWS
