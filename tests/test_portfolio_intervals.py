@@ -125,24 +125,56 @@ def test_portfolio_interval_verifier_accepts_complete_reopened_evidence():
     assert "unconditional future guarantee" in evidence["markdown"]
 
 
-def test_portfolio_interval_verifier_does_not_reclassify_persisted_edge_flags():
-    evidence = build()
-    frames = {
-        role: frame.copy() for role, frame in evidence["frames"].items()
-    }
+def _replace_first_interval(
+    frames: dict[str, pd.DataFrame],
+    *,
+    actual: float,
+    covered: bool,
+) -> None:
     intervals = frames["prediction_intervals"]
     intervals.loc[0, "lower_prediction_mw"] = 0.0
     intervals.loc[0, "point_prediction_mw"] = 0.5
     intervals.loc[0, "upper_prediction_mw"] = 1.0
-    intervals.loc[0, "actual_demand_mw"] = 1.0 + 5e-10
+    intervals.loc[0, "actual_demand_mw"] = actual
     intervals.loc[0, "interval_width_mw"] = 1.0
-    intervals.loc[0, "interval_covered"] = False
+    intervals.loc[0, "interval_covered"] = covered
+
+
+def test_portfolio_interval_verifier_preserves_edge_flags_across_round_trip_drift():
+    evidence = build()
+    frames = {
+        role: frame.copy() for role, frame in evidence["frames"].items()
+    }
+    _replace_first_interval(
+        frames,
+        actual=1.0 - 5e-10,
+        covered=False,
+    )
 
     verify_portfolio_interval_evidence(
         manifest=evidence["manifest"],
         frames_by_role=frames,
         expected_source_areas={"east_midlands"},
     )
+
+
+def test_portfolio_interval_verifier_rejects_material_coverage_contradiction():
+    evidence = build()
+    frames = {
+        role: frame.copy() for role, frame in evidence["frames"].items()
+    }
+    _replace_first_interval(
+        frames,
+        actual=0.5,
+        covered=False,
+    )
+
+    with pytest.raises(PortfolioIntervalError, match="coverage flags"):
+        verify_portfolio_interval_evidence(
+            manifest=evidence["manifest"],
+            frames_by_role=frames,
+            expected_source_areas={"east_midlands"},
+        )
 
 
 def test_portfolio_interval_verifier_rejects_causal_tampering():
