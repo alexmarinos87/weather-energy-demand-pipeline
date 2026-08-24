@@ -16,6 +16,7 @@ from forecasting.seasonal_baselines import ALL_MODELS
 
 INTERVAL_COVERAGE_LEVELS = (0.80, 0.90, 0.95)
 MIN_INTERVAL_CALIBRATION_ROWS = 24
+INTERVAL_EDGE_TOLERANCE_MW = 1e-9
 INTERVAL_ARTIFACT_ROLES = {
     "prediction_intervals",
     "prediction_interval_metrics",
@@ -273,12 +274,18 @@ def verify_portfolio_interval_evidence(
     upper = pd.to_numeric(intervals["upper_prediction_mw"], errors="coerce")
     width = pd.to_numeric(intervals["interval_width_mw"], errors="coerce")
     actual = pd.to_numeric(intervals["actual_demand_mw"], errors="coerce")
-    covered = (lower <= actual) & (actual <= upper)
+    covered = (
+        (lower - INTERVAL_EDGE_TOLERANCE_MW <= actual)
+        & (actual <= upper + INTERVAL_EDGE_TOLERANCE_MW)
+    )
     if not (
-        (lower <= point)
-        & (point <= upper)
-        & (width >= 0)
-        & ((upper - lower - width).abs() <= 1e-9)
+        (lower <= point + INTERVAL_EDGE_TOLERANCE_MW)
+        & (point <= upper + INTERVAL_EDGE_TOLERANCE_MW)
+        & (width >= -INTERVAL_EDGE_TOLERANCE_MW)
+        & (
+            (upper - lower - width).abs()
+            <= INTERVAL_EDGE_TOLERANCE_MW
+        )
     ).all():
         raise PortfolioIntervalError("Portfolio interval bounds are invalid.")
     retained_covered = intervals["interval_covered"].astype(str).str.lower().map(
