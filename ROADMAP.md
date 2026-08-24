@@ -32,17 +32,20 @@ checks pass.
 | G19a | Elapsed-time previous-day and previous-week local baselines with tolerance, coverage, holdout, and rolling-origin evidence | Implemented |
 | G19b | Fabric parity for elapsed-time seasonal baseline comparison and independent quality checks | Implemented as an optional manual subflow |
 | G20a | Calibration-only prediction intervals using causally available validation residuals, finite-sample ranks, and empirical test coverage/width evidence | Implemented locally |
-| G20b | Fabric parity for calibration-only prediction intervals without test-label leakage | Next |
-| G21 | Multi-area portfolio-demo integration for independently validated seasonal and interval evidence | Planned |
+| G20b | Fabric parity for calibration-only prediction intervals without test-label leakage | Implemented as an optional manual subflow |
+| G21a | Paired area-and-horizon model-family scorecards across persistence, seasonal, UTC-calendar ridge, and UK-local-calendar ridge evidence | Next |
+| G21b | Multi-area portfolio-demo integration for independently validated seasonal evidence | Planned |
+| G21c | Multi-area portfolio-demo integration for independently validated interval evidence | Planned |
+| G22 | Interval coverage, width, calibration-history, and freshness monitoring without automatic recalibration | Planned |
 
 ## Product-quality sequence
 
 The next product-quality work should proceed in this order:
 
-1. Add optional Fabric parity for calibration-only intervals without using test labels for width.
-2. Compare persistence, seasonal, UTC-calendar ridge, and UK-local-calendar ridge evidence by area and horizon.
-3. Extend the multi-area portfolio demo only after each new capability has an independently tested contract.
-4. Add interval calibration and width monitoring only after Fabric interval parity is stable.
+1. Compare persistence, seasonal, UTC-calendar ridge, and UK-local-calendar ridge evidence by area and horizon on one paired target cohort.
+2. Add independently validated seasonal evidence to the four-area portfolio demo.
+3. Add independently validated calibration-only interval evidence to the portfolio demo.
+4. Add interval calibration, empirical-coverage, width, and freshness monitoring without automatic recalibration.
 
 ## Dependency rules
 
@@ -112,8 +115,13 @@ The next product-quality work should proceed in this order:
 - Prediction intervals must be calibrated on validation labels available before
   the first test feature timestamp; overlapping validation labels and all test
   labels are forbidden from setting interval width.
+- Fabric interval parity must consume one retained point-prediction run, reuse
+  its final test cohort, and must not fit or refit any point model.
 - Interval coverage is retained as empirical evaluation evidence and must not be
   presented as an unconditional guarantee under distribution shift.
+- Interval monitoring may warn about calibration, coverage, width, or freshness
+  but must not automatically change a radius, model, schedule, or promotion
+  state.
 
 ## Reusable PR workflow
 
