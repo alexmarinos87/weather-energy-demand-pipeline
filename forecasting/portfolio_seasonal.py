@@ -52,13 +52,14 @@ def _seasonal_features(source_areas: tuple[str, ...]) -> pd.DataFrame:
     frame = build_seasonal_demo_feature_frame(
         periods=SEASONAL_DEMO_DAYS * 288,
         source_areas=source_areas,
-    )
-    sampled = (
-        frame.sort_values([*GROUP_COLUMNS, TIMESTAMP_COLUMN])
-        .groupby(GROUP_COLUMNS, sort=True, dropna=False, group_keys=False)
-        .apply(lambda group: group.iloc[::6])
-        .reset_index(drop=True)
-    )
+    ).sort_values([*GROUP_COLUMNS, TIMESTAMP_COLUMN])
+    sampled_groups = [
+        group.iloc[::6].copy()
+        for _, group in frame.groupby(
+            GROUP_COLUMNS, sort=True, dropna=False
+        )
+    ]
+    sampled = pd.concat(sampled_groups, ignore_index=True)
     if sampled.empty:
         raise PortfolioSeasonalError("Seasonal portfolio features are empty.")
     for _, group in sampled.groupby(GROUP_COLUMNS, sort=True, dropna=False):
