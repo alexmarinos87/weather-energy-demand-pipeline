@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "paired_model_family_scorecard_v1",
+  "type": "object",
+  "required": [
+    "scorecard_run_id",
+    "scorecard_run_timestamp_utc",
+    "utc_source_run_id",
+    "uk_local_source_run_id",
+    "source_area",
+    "resource_id",
+    "city",
+    "requested_horizon_minutes",
+    "split",
+    "model_name",
+    "model_family",
+    "source_feature_contract_version",
+    "evaluation_contract_version",
+    "trained_through_utc",
+    "training_observation_count",
+    "paired_observation_count",
+    "paired_target_identity_sha256",
+    "mae_mw",
+    "rmse_mw",
+    "bias_mw",
+    "median_absolute_error_mw",
+    "p95_absolute_error_mw",
+    "scorecard_contract_version"
+  ],
+  "properties": {
+    "scorecard_run_id": {"type": "string", "minLength": 1},
+    "scorecard_run_timestamp_utc": {"type": "string", "format": "date-time"},
+    "utc_source_run_id": {"type": "string", "minLength": 1},
+    "uk_local_source_run_id": {"type": "string", "minLength": 1},
+    "source_area": {"type": "string", "minLength": 1},
+    "resource_id": {"type": "string", "minLength": 1},
+    "city": {"type": "string", "minLength": 1},
+    "requested_horizon_minutes": {"type": "integer", "enum": [30, 60]},
+    "split": {"enum": ["validation", "test"]},
+    "origin_fold": {"type": ["integer", "null"], "minimum": 1},
+    "origin_count": {"type": ["integer", "null"], "minimum": 2},
+    "origin_cutoff_utc": {"type": ["string", "null"], "format": "date-time"},
+    "model_name": {
+      "enum": [
+        "persistence_current_value",
+        "seasonal_previous_day",
+        "seasonal_previous_week",
+        "ridge_weather_lag_utc",
+        "ridge_weather_lag_uk_local"
+      ]
+    },
+    "model_family": {
+      "enum": [
+        "persistence",
+        "seasonal",
+        "ridge_utc_calendar",
+        "ridge_uk_local_calendar"
+      ]
+    },
+    "source_feature_contract_version": {
+      "enum": ["time-horizon-v1", "time-horizon-uk-calendar-v1"]
+    },
+    "evaluation_contract_version": {
+      "enum": ["fixed-holdout-v1", "rolling-origin-v1"]
+    },
+    "trained_through_utc": {"type": "string", "format": "date-time"},
+    "training_observation_count": {"type": "integer", "minimum": 1},
+    "paired_observation_count": {"type": "integer", "minimum": 1},
+    "paired_target_identity_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "mae_mw": {"type": "number", "minimum": 0},
+    "rmse_mw": {"type": "number", "minimum": 0},
+    "mape_pct": {"type": ["number", "null"], "minimum": 0},
+    "bias_mw": {"type": "number"},
+    "median_absolute_error_mw": {"type": "number", "minimum": 0},
+    "p95_absolute_error_mw": {"type": "number", "minimum": 0},
+    "scorecard_contract_version": {"const": "paired-model-family-scorecard-v1"}
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "model_name": {"const": "ridge_weather_lag_uk_local"}
+        }
+      },
+      "then": {
+        "properties": {
+          "source_feature_contract_version": {
+            "const": "time-horizon-uk-calendar-v1"
+          },
+          "model_family": {"const": "ridge_uk_local_calendar"}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "model_name": {"const": "ridge_weather_lag_utc"}
+        }
+      },
+      "then": {
+        "properties": {
+          "source_feature_contract_version": {"const": "time-horizon-v1"},
+          "model_family": {"const": "ridge_utc_calendar"}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "evaluation_contract_version": {"const": "rolling-origin-v1"}
+        }
+      },
+      "then": {
+        "required": ["origin_fold", "origin_count", "origin_cutoff_utc"]
+      }
+    }
+  ],
+  "additionalProperties": true
+}
