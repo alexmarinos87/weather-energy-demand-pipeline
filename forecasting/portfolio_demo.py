@@ -22,6 +22,11 @@ from forecasting.forecast_weather import (
     ForecastWeatherConfig,
     build_demo_forecast_weather_frame,
 )
+from forecasting.portfolio_intervals import (
+    INTERVAL_ARTIFACT_ROLES,
+    build_portfolio_interval_evidence,
+    verify_portfolio_interval_evidence,
+)
 from forecasting.portfolio_seasonal import (
     SEASONAL_ARTIFACT_ROLES,
     build_portfolio_seasonal_evidence,
@@ -31,7 +36,7 @@ from forecasting.weather_comparison import run_weather_model_comparison
 from ingestion.common.source_area import load_source_area_contract
 
 
-MANIFEST_CONTRACT_VERSION = "portfolio-demo-manifest-v3"
+MANIFEST_CONTRACT_VERSION = "portfolio-demo-manifest-v4"
 DEMO_RUN_ID_PATTERN = re.compile(r"^pdm-[0-9a-f]{24}$")
 EXPECTED_SOURCE_AREAS = {
     "east_midlands",
@@ -53,7 +58,9 @@ BASE_ARTIFACT_ROLES = {
     "peak_demand_events",
     "demand_weather_markdown",
 }
-EXPECTED_ARTIFACT_ROLES = BASE_ARTIFACT_ROLES | SEASONAL_ARTIFACT_ROLES
+EXPECTED_ARTIFACT_ROLES = (
+    BASE_ARTIFACT_ROLES | SEASONAL_ARTIFACT_ROLES | INTERVAL_ARTIFACT_ROLES
+)
 
 
 class PortfolioDemoError(ValueError):
@@ -375,6 +382,27 @@ def verify_portfolio_demo_manifest(
             "Portfolio model-family summary lacks its review-only boundary."
         )
 
+    interval_frames = {
+        role: _read_frame(by_role[role])
+        for role in INTERVAL_ARTIFACT_ROLES
+        if role != "prediction_interval_summary_markdown"
+    }
+    try:
+        verify_portfolio_interval_evidence(
+            manifest=manifest,
+            frames_by_role=interval_frames,
+            expected_source_areas=EXPECTED_SOURCE_AREAS,
+        )
+    except ValueError as exc:
+        raise PortfolioDemoError(str(exc)) from exc
+    interval_report = by_role["prediction_interval_summary_markdown"].read_text(
+        encoding="utf-8"
+    )
+    if "unconditional future guarantee" not in interval_report:
+        raise PortfolioDemoError(
+            "Portfolio interval summary lacks its retrospective-evidence boundary."
+        )
+
 
 def _source_area_summary(features: pd.DataFrame) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
@@ -477,6 +505,11 @@ def run_portfolio_demo(
             run_id=run_id,
             run_timestamp=timestamp.to_pydatetime(),
         )
+        intervals = build_portfolio_interval_evidence(
+            seasonal["frames"]["seasonal_utc_predictions"],
+            run_id=run_id,
+            run_timestamp=timestamp.to_pydatetime(),
+        )
         analytics = build_demand_weather_analysis(
             features,
             config=DemandWeatherAnalysisConfig(
@@ -531,6 +564,10 @@ def run_portfolio_demo(
                 (role, role, frame)
                 for role, frame in seasonal["frames"].items()
             ],
+            *[
+                (role, role, frame)
+                for role, frame in intervals["frames"].items()
+            ],
         ]
         artifacts: list[dict[str, Any]] = []
         for role, name, frame in frame_outputs:
@@ -569,6 +606,18 @@ def run_portfolio_demo(
                 output_format=None,
             )
         )
+        interval_report_path = _write_text(
+            str(intervals["markdown"]),
+            temporary_directory / "prediction_interval_summary.md",
+        )
+        artifacts.append(
+            _artifact(
+                interval_report_path,
+                role="prediction_interval_summary_markdown",
+                row_count=None,
+                output_format=None,
+            )
+        )
         manifest = {
             "demo_run_id": run_id,
             "demo_run_timestamp_utc": timestamp.isoformat(),
@@ -590,6 +639,7 @@ def run_portfolio_demo(
                 comparison_predictions["model_name"].unique().tolist()
             ),
             **seasonal["manifest"],
+            **intervals["manifest"],
             "artifacts": sorted(
                 artifacts, key=lambda artifact: artifact["artifact_role"]
             ),

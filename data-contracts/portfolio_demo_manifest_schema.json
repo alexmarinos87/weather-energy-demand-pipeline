@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "portfolio_demo_manifest_v3",
+  "title": "portfolio_demo_manifest_v4",
   "type": "object",
   "required": [
     "demo_run_id",
@@ -19,6 +19,11 @@
     "seasonal_reference_periods_minutes",
     "seasonal_source_cadence_minutes",
     "seasonal_demo_days",
+    "interval_models",
+    "interval_coverage_levels",
+    "minimum_interval_calibration_rows",
+    "interval_contract_version",
+    "interval_source_feature_contract_version",
     "artifacts",
     "credential_free",
     "live_source_calls_performed",
@@ -60,11 +65,7 @@
       }
     },
     "demand_horizons_minutes": {
-      "type": "array",
-      "minItems": 2,
-      "maxItems": 2,
-      "uniqueItems": true,
-      "items": {"enum": [30, 60]}
+      "const": [30, 60]
     },
     "baseline_models": {
       "type": "array",
@@ -117,10 +118,32 @@
     "seasonal_reference_periods_minutes": {"const": [1440, 10080]},
     "seasonal_source_cadence_minutes": {"const": 30},
     "seasonal_demo_days": {"type": "integer", "minimum": 9},
+    "interval_models": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "persistence_current_value",
+          "seasonal_previous_day",
+          "seasonal_previous_week",
+          "ridge_weather_lag"
+        ]
+      }
+    },
+    "interval_coverage_levels": {"const": [0.8, 0.9, 0.95]},
+    "minimum_interval_calibration_rows": {"const": 24},
+    "interval_contract_version": {
+      "const": "split-conformal-absolute-residual-v1"
+    },
+    "interval_source_feature_contract_version": {
+      "const": "time-horizon-v1"
+    },
     "artifacts": {
       "type": "array",
-      "minItems": 20,
-      "maxItems": 20,
+      "minItems": 24,
+      "maxItems": 24,
       "uniqueItems": true,
       "items": {
         "type": "object",
@@ -154,7 +177,11 @@
               "seasonal_uk_local_metrics",
               "model_family_scorecard",
               "model_family_pairwise_metrics",
-              "model_family_summary_markdown"
+              "model_family_summary_markdown",
+              "prediction_intervals",
+              "prediction_interval_metrics",
+              "interval_coverage_summary",
+              "prediction_interval_summary_markdown"
             ]
           },
           "relative_path": {"type": "string", "minLength": 1},
@@ -174,7 +201,7 @@
     "schedule_activation_performed": {"const": false},
     "model_promotion_performed": {"const": false},
     "external_publication_performed": {"const": false},
-    "manifest_contract_version": {"const": "portfolio-demo-manifest-v3"},
+    "manifest_contract_version": {"const": "portfolio-demo-manifest-v4"},
     "manifest_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
   },
   "additionalProperties": true

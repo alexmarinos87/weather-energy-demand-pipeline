@@ -35,15 +35,14 @@ checks pass.
 | G20b | Fabric parity for calibration-only prediction intervals without test-label leakage | Implemented as an optional manual subflow |
 | G21a | Paired area-and-horizon model-family scorecards across persistence, seasonal, UTC-calendar ridge, and UK-local-calendar ridge evidence | Implemented locally |
 | G21b | Multi-area portfolio-demo integration for independently validated seasonal evidence | Implemented |
-| G21c | Multi-area portfolio-demo integration for independently validated interval evidence | Next |
-| G22 | Interval coverage, width, calibration-history, and freshness monitoring without automatic recalibration | Planned |
+| G21c | Multi-area portfolio-demo integration for independently validated interval evidence | Implemented |
+| G22 | Interval coverage, width, calibration-history, and freshness monitoring without automatic recalibration | Next |
 
 ## Product-quality sequence
 
-The next product-quality work should proceed in this order:
-
-1. Add independently validated calibration-only interval evidence to the portfolio demo.
-2. Add interval calibration, empirical-coverage, width, and freshness monitoring without automatic recalibration.
+The next product-quality work should add interval calibration, empirical-coverage,
+width, and freshness monitoring without automatic recalibration, model changes,
+schedule changes, or promotion changes.
 
 ## Dependency rules
 
@@ -123,6 +122,10 @@ The next product-quality work should proceed in this order:
 - Portfolio seasonal evidence must reopen every artifact, retain all four source
   identities, preserve exact 30-minute cadence and zero-offset elapsed
   day/week references, and bind all five scorecard models to one target digest.
+- Portfolio interval evidence must use the retained UTC seasonal point run,
+  require at least 24 causally available validation labels, preserve 80/90/95%
+  finite-sample ranks, retain all four areas and two horizons, and present
+  empirical coverage only as retrospective evidence.
 - Interval monitoring may warn about calibration, coverage, width, or freshness
   but must not automatically change a radius, model, schedule, or promotion
   state.
