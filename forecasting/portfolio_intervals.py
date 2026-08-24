@@ -274,10 +274,10 @@ def verify_portfolio_interval_evidence(
     upper = pd.to_numeric(intervals["upper_prediction_mw"], errors="coerce")
     width = pd.to_numeric(intervals["interval_width_mw"], errors="coerce")
     actual = pd.to_numeric(intervals["actual_demand_mw"], errors="coerce")
-    covered = (
-        (lower - INTERVAL_EDGE_TOLERANCE_MW <= actual)
-        & (actual <= upper + INTERVAL_EDGE_TOLERANCE_MW)
-    )
+    # Coverage is a persisted contract field generated from the stored inclusive
+    # bounds. Numeric tolerance protects bound/width consistency checks below,
+    # but must not silently reclassify a retained coverage decision.
+    covered = (lower <= actual) & (actual <= upper)
     if not (
         (lower <= point + INTERVAL_EDGE_TOLERANCE_MW)
         & (point <= upper + INTERVAL_EDGE_TOLERANCE_MW)
