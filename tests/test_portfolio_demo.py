@@ -39,6 +39,7 @@ MODEL_FAMILY_MODELS = {
     "ridge_weather_lag_utc",
     "ridge_weather_lag_uk_local",
 }
+INTERVAL_COVERAGE_LEVELS = {0.80, 0.90, 0.95}
 
 
 @pytest.fixture(scope="module")
@@ -86,7 +87,7 @@ def test_demo_manifest_records_complete_multi_area_product_journey(demo_run):
     assert manifest["demo_run_id"] == RUN_ID
     assert manifest["source_mode"] == "deterministic_credential_free_demo"
     assert manifest["manifest_contract_version"] == MANIFEST_CONTRACT_VERSION
-    assert manifest["manifest_contract_version"] == "portfolio-demo-manifest-v3"
+    assert manifest["manifest_contract_version"] == "portfolio-demo-manifest-v4"
     assert manifest["source_groups"] == 4
     assert {
         binding["source_area"] for binding in manifest["source_bindings"]
@@ -112,10 +113,20 @@ def test_demo_manifest_records_complete_multi_area_product_journey(demo_run):
     assert manifest["seasonal_reference_periods_minutes"] == [1440, 10080]
     assert manifest["seasonal_source_cadence_minutes"] == 30
     assert manifest["seasonal_demo_days"] == 12
+    assert set(manifest["interval_models"]) == SEASONAL_MODELS
+    assert set(manifest["interval_coverage_levels"]) == INTERVAL_COVERAGE_LEVELS
+    assert manifest["minimum_interval_calibration_rows"] == 24
+    assert (
+        manifest["interval_contract_version"]
+        == "split-conformal-absolute-residual-v1"
+    )
+    assert manifest["interval_source_feature_contract_version"] == (
+        "time-horizon-v1"
+    )
     assert {item["artifact_role"] for item in manifest["artifacts"]} == (
         EXPECTED_ARTIFACT_ROLES
     )
-    assert len(manifest["artifacts"]) == 20
+    assert len(manifest["artifacts"]) == 24
 
 
 def test_demo_safety_boundary_is_explicit_and_false_for_side_effects(demo_run):
@@ -152,8 +163,14 @@ def test_demo_outputs_preserve_area_isolation_across_product_evidence(demo_run):
     seasonal_uk = pd.read_csv(by_role["seasonal_uk_local_predictions"])
     scorecard = pd.read_csv(by_role["model_family_scorecard"])
     pairwise = pd.read_csv(by_role["model_family_pairwise_metrics"])
+    intervals = pd.read_csv(by_role["prediction_intervals"])
+    interval_metrics = pd.read_csv(by_role["prediction_interval_metrics"])
+    interval_summary = pd.read_csv(by_role["interval_coverage_summary"])
     report = by_role["demand_weather_markdown"].read_text(encoding="utf-8")
     scorecard_report = by_role["model_family_summary_markdown"].read_text(
+        encoding="utf-8"
+    )
+    interval_report = by_role["prediction_interval_summary_markdown"].read_text(
         encoding="utf-8"
     )
     for frame in (
@@ -166,6 +183,9 @@ def test_demo_outputs_preserve_area_isolation_across_product_evidence(demo_run):
         seasonal_uk,
         scorecard,
         pairwise,
+        intervals,
+        interval_metrics,
+        interval_summary,
     ):
         assert set(frame["source_area"]) == EXPECTED_SOURCE_AREAS
     assert set(baseline["requested_horizon_minutes"]) == {30, 60}
@@ -187,15 +207,25 @@ def test_demo_outputs_preserve_area_isolation_across_product_evidence(demo_run):
     assert set(pairwise["reference_model_name"]) == {
         "persistence_current_value"
     }
+    assert set(intervals["model_name"]) == SEASONAL_MODELS
+    assert set(interval_metrics["model_name"]) == SEASONAL_MODELS
+    assert set(intervals["target_coverage_level"].astype(float)) == (
+        INTERVAL_COVERAGE_LEVELS
+    )
+    assert set(interval_summary["target_coverage_level"].astype(float)) == (
+        INTERVAL_COVERAGE_LEVELS
+    )
     assert len(area_summary) == 4
     assert len(overview) == 4
     assert (overview["observation_count"] > 100).all()
     assert "This report is descriptive" in report
     assert "Correlation does not establish causation" in report
     assert "comparison evidence only" in scorecard_report
+    assert "unconditional future guarantee" in interval_report
     for area in EXPECTED_SOURCE_AREAS:
         assert area in report
         assert area in scorecard_report
+        assert area in interval_report
 
 
 def test_seasonal_artifacts_retain_exact_elapsed_time_and_calendar_contracts(demo_run):
@@ -261,6 +291,54 @@ def test_model_family_scorecard_has_one_paired_cohort_per_area_horizon_slice(dem
     assert set(scorecard["requested_horizon_minutes"]) == {30, 60}
 
 
+def test_interval_artifacts_retain_causal_calibration_and_finite_sample_ranks(demo_run):
+    _, manifest, manifest_path = demo_run
+    by_role = _by_role(manifest, manifest_path)
+    intervals = pd.read_csv(by_role["prediction_intervals"])
+    calibration_through = pd.to_datetime(
+        intervals["calibration_label_available_through_utc"], utc=True
+    )
+    feature_time = pd.to_datetime(intervals["feature_timestamp_utc"], utc=True)
+    target_time = pd.to_datetime(intervals["event_timestamp_utc"], utc=True)
+    trained_through = pd.to_datetime(
+        intervals["point_model_trained_through_utc"], utc=True
+    )
+    assert (
+        (calibration_through < feature_time)
+        & (trained_through < feature_time)
+        & (feature_time < target_time)
+    ).all()
+    counts = intervals["calibration_observation_count"].astype(int)
+    coverage = intervals["target_coverage_level"].astype(float)
+    expected = [
+        min(count, max(1, __import__("math").ceil((count + 1) * level)))
+        for count, level in zip(counts, coverage)
+    ]
+    assert intervals["calibration_quantile_rank"].astype(int).tolist() == expected
+    assert counts.min() >= 24
+    assert set(intervals["feature_contract_version"]) == {"time-horizon-v1"}
+    assert set(intervals["requested_horizon_minutes"].astype(int)) == {30, 60}
+
+
+def test_interval_summary_retains_every_area_horizon_level_and_four_models(demo_run):
+    _, manifest, manifest_path = demo_run
+    summary = pd.read_csv(
+        _by_role(manifest, manifest_path)["interval_coverage_summary"]
+    )
+    assert len(summary) == 4 * 2 * 3
+    assert set(summary["model_count"].astype(int)) == {4}
+    assert set(summary["requested_horizon_minutes"].astype(int)) == {30, 60}
+    assert set(summary["target_coverage_level"].astype(float)) == (
+        INTERVAL_COVERAGE_LEVELS
+    )
+    for column in (
+        "empirical_coverage_pct_mean",
+        "empirical_coverage_pct_min",
+        "empirical_coverage_pct_max",
+    ):
+        assert summary[column].astype(float).between(0, 100).all()
+
+
 def test_demo_manifest_satisfies_versioned_schema(demo_run):
     _, manifest, _ = demo_run
     schema = json.loads(
@@ -286,16 +364,16 @@ def test_demo_verification_detects_artifact_tampering(demo_run, tmp_path):
         verify_portfolio_demo_manifest(manifest, copied)
 
 
-def test_demo_verification_detects_seasonal_contract_tampering(demo_run, tmp_path):
+def test_demo_verification_detects_interval_contract_tampering(demo_run, tmp_path):
     _, manifest, manifest_path = demo_run
-    copied = tmp_path / "seasonal-tamper"
+    copied = tmp_path / "interval-tamper"
     shutil.copytree(manifest_path.parent, copied)
     payload = json.loads(json.dumps(manifest))
-    payload["seasonal_source_cadence_minutes"] = 5
+    payload["minimum_interval_calibration_rows"] = 1
     from forecasting.portfolio_demo import _document_hash
 
     payload["manifest_hash"] = _document_hash(payload)
-    with pytest.raises(PortfolioDemoError, match="source cadence"):
+    with pytest.raises(PortfolioDemoError, match="calibration"):
         verify_portfolio_demo_manifest(payload, copied)
 
 
@@ -346,7 +424,7 @@ def test_cli_is_credential_free_even_when_network_calls_are_blocked(
     assert len(manifests) == 1
     payload = json.loads(manifests[0].read_text(encoding="utf-8"))
     assert payload["source_groups"] == 4
-    assert len(payload["artifacts"]) == 20
+    assert len(payload["artifacts"]) == 24
     verify_portfolio_demo_manifest(payload, manifests[0].parent)
 
 
@@ -375,16 +453,17 @@ def test_readme_leads_with_the_one_command_product_journey():
     assert "## Capability index" in readme
 
 
-def test_portfolio_demo_document_matches_seasonal_spatial_and_safety_contract():
+def test_portfolio_demo_document_matches_interval_spatial_and_safety_contract():
     document = (ROOT / "PORTFOLIO_DEMO.md").read_text(encoding="utf-8")
     assert "python -m forecasting.run_portfolio_demo" in document
     assert "constraints/ci-python311-linux.txt" in document
     assert "four contracted NGED licence areas" in document
-    assert "demo_source_area_summary" in document
     assert "seasonal_previous_day" in document
     assert "ridge_weather_lag_uk_local" in document
-    assert "model_family_scorecard" in document
+    assert "prediction_intervals" in document
+    assert "0.80" in document and "0.90" in document and "0.95" in document
+    assert "minimum calibration" in document.lower()
     assert "credential_free=true" in document
     assert "live_source_calls_performed=false" in document
     assert "model_promotion_performed=false" in document
-    assert "portfolio-demo-manifest-v3" in document
+    assert "portfolio-demo-manifest-v4" in document
