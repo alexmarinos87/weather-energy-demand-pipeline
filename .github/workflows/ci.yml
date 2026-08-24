@@ -44,4 +44,4 @@ jobs:
         run: python -m compileall -q ingestion transformations forecasting fabric/notebooks tests
 
       - name: Run tests
-        run: python -m pytest -q -x --tb=short
+        run: python -m pytest -q
