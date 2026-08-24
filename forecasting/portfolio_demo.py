@@ -22,11 +22,16 @@ from forecasting.forecast_weather import (
     ForecastWeatherConfig,
     build_demo_forecast_weather_frame,
 )
+from forecasting.portfolio_seasonal import (
+    SEASONAL_ARTIFACT_ROLES,
+    build_portfolio_seasonal_evidence,
+    verify_portfolio_seasonal_evidence,
+)
 from forecasting.weather_comparison import run_weather_model_comparison
 from ingestion.common.source_area import load_source_area_contract
 
 
-MANIFEST_CONTRACT_VERSION = "portfolio-demo-manifest-v2"
+MANIFEST_CONTRACT_VERSION = "portfolio-demo-manifest-v3"
 DEMO_RUN_ID_PATTERN = re.compile(r"^pdm-[0-9a-f]{24}$")
 EXPECTED_SOURCE_AREAS = {
     "east_midlands",
@@ -34,7 +39,7 @@ EXPECTED_SOURCE_AREAS = {
     "south_west",
     "west_midlands",
 }
-EXPECTED_ARTIFACT_ROLES = {
+BASE_ARTIFACT_ROLES = {
     "demo_features",
     "demo_source_area_summary",
     "demo_forecast_weather",
@@ -48,6 +53,7 @@ EXPECTED_ARTIFACT_ROLES = {
     "peak_demand_events",
     "demand_weather_markdown",
 }
+EXPECTED_ARTIFACT_ROLES = BASE_ARTIFACT_ROLES | SEASONAL_ARTIFACT_ROLES
 
 
 class PortfolioDemoError(ValueError):
@@ -348,6 +354,27 @@ def verify_portfolio_demo_manifest(
             "Portfolio demo source-area summary counts are invalid."
         )
 
+    seasonal_frames = {
+        role: _read_frame(by_role[role])
+        for role in SEASONAL_ARTIFACT_ROLES
+        if role != "model_family_summary_markdown"
+    }
+    try:
+        verify_portfolio_seasonal_evidence(
+            manifest=manifest,
+            frames_by_role=seasonal_frames,
+            expected_source_areas=EXPECTED_SOURCE_AREAS,
+        )
+    except ValueError as exc:
+        raise PortfolioDemoError(str(exc)) from exc
+    seasonal_report = by_role["model_family_summary_markdown"].read_text(
+        encoding="utf-8"
+    )
+    if "comparison evidence only" not in seasonal_report:
+        raise PortfolioDemoError(
+            "Portfolio model-family summary lacks its review-only boundary."
+        )
+
 
 def _source_area_summary(features: pd.DataFrame) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
@@ -445,6 +472,11 @@ def run_portfolio_demo(
             run_id=f"{run_id}-comparison",
             run_timestamp=timestamp.to_pydatetime(),
         )
+        seasonal = build_portfolio_seasonal_evidence(
+            source_areas=tuple(sorted(EXPECTED_SOURCE_AREAS)),
+            run_id=run_id,
+            run_timestamp=timestamp.to_pydatetime(),
+        )
         analytics = build_demand_weather_analysis(
             features,
             config=DemandWeatherAnalysisConfig(
@@ -495,6 +527,10 @@ def run_portfolio_demo(
                 "peak_demand_events",
                 analytics["peak_demand_events"],
             ),
+            *[
+                (role, role, frame)
+                for role, frame in seasonal["frames"].items()
+            ],
         ]
         artifacts: list[dict[str, Any]] = []
         for role, name, frame in frame_outputs:
@@ -521,6 +557,18 @@ def run_portfolio_demo(
                 output_format=None,
             )
         )
+        seasonal_report_path = _write_text(
+            str(seasonal["markdown"]),
+            temporary_directory / "model_family_summary.md",
+        )
+        artifacts.append(
+            _artifact(
+                seasonal_report_path,
+                role="model_family_summary_markdown",
+                row_count=None,
+                output_format=None,
+            )
+        )
         manifest = {
             "demo_run_id": run_id,
             "demo_run_timestamp_utc": timestamp.isoformat(),
@@ -541,6 +589,7 @@ def run_portfolio_demo(
             "comparison_models": sorted(
                 comparison_predictions["model_name"].unique().tolist()
             ),
+            **seasonal["manifest"],
             "artifacts": sorted(
                 artifacts, key=lambda artifact: artifact["artifact_role"]
             ),

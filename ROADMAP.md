@@ -34,17 +34,16 @@ checks pass.
 | G20a | Calibration-only prediction intervals using causally available validation residuals, finite-sample ranks, and empirical test coverage/width evidence | Implemented locally |
 | G20b | Fabric parity for calibration-only prediction intervals without test-label leakage | Implemented as an optional manual subflow |
 | G21a | Paired area-and-horizon model-family scorecards across persistence, seasonal, UTC-calendar ridge, and UK-local-calendar ridge evidence | Implemented locally |
-| G21b | Multi-area portfolio-demo integration for independently validated seasonal evidence | Next |
-| G21c | Multi-area portfolio-demo integration for independently validated interval evidence | Planned |
+| G21b | Multi-area portfolio-demo integration for independently validated seasonal evidence | Implemented |
+| G21c | Multi-area portfolio-demo integration for independently validated interval evidence | Next |
 | G22 | Interval coverage, width, calibration-history, and freshness monitoring without automatic recalibration | Planned |
 
 ## Product-quality sequence
 
 The next product-quality work should proceed in this order:
 
-1. Add independently validated seasonal and model-family scorecard evidence to the four-area portfolio demo.
-2. Add independently validated calibration-only interval evidence to the portfolio demo.
-3. Add interval calibration, empirical-coverage, width, and freshness monitoring without automatic recalibration.
+1. Add independently validated calibration-only interval evidence to the portfolio demo.
+2. Add interval calibration, empirical-coverage, width, and freshness monitoring without automatic recalibration.
 
 ## Dependency rules
 
@@ -121,6 +120,9 @@ The next product-quality work should proceed in this order:
 - Model-family scorecards must pair exact UTC target identities, preserve
   area/horizon boundaries, require identical control predictions and training
   evidence, and may not convert retained error rankings into model approval.
+- Portfolio seasonal evidence must reopen every artifact, retain all four source
+  identities, preserve exact 30-minute cadence and zero-offset elapsed
+  day/week references, and bind all five scorecard models to one target digest.
 - Interval monitoring may warn about calibration, coverage, width, or freshness
   but must not automatically change a radius, model, schedule, or promotion
   state.

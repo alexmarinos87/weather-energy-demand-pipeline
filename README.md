@@ -9,7 +9,7 @@ product path
     ingestion → silver → causal gold features → analytics/forecast evidence
 
 evaluation path
-    bounded future targets → holdout/rolling backtests → paired weather models
+    bounded targets → holdout/rolling backtests → seasonal/calendar scorecards
 
 control path
     reconciliation → health evidence → human review → bounded pilot records
@@ -46,12 +46,15 @@ data/portfolio-demo/pdm-<24-hex>/
 
 It contains:
 
-- deterministic gold-like demand/weather features;
+- deterministic gold-like demand/weather features for all four source areas;
 - deterministic target-valid forecast weather;
 - 30- and 60-minute persistence and ridge baseline predictions/metrics;
 - paired `ridge_weather_lag` and `ridge_target_weather` predictions/metrics;
-- a demand/weather overview, hourly profile, temperature-band profile, peak events, and Markdown report; and
-- `portfolio_demo_manifest.json` with file sizes, row counts, SHA-256 hashes, model identities, horizons, and no-side-effect flags.
+- 12 days of 30-minute seasonal feature history;
+- exact elapsed-time previous-day and previous-week evidence under both UTC and UK-local calendar contracts;
+- a paired five-model area/horizon scorecard and persistence comparison;
+- descriptive demand/weather tables and two Markdown reports; and
+- `portfolio_demo_manifest.json` with file sizes, row counts, SHA-256 hashes, spatial/model/feature-contract identities, horizons, seasonal periods, and no-side-effect flags.
 
 The demo reads no credential, performs no live source call, changes no Fabric workspace, activates no schedule, promotes no model, and publishes nothing externally. See `PORTFOLIO_DEMO.md`.
 
@@ -61,18 +64,23 @@ The demo reads no credential, performs no live source call, changes no Fabric wo
 
 | Capability | Main entry point | Detail |
 | --- | --- | --- |
-| One-command local product demo | `python -m forecasting.run_portfolio_demo` | `PORTFOLIO_DEMO.md` |
+| One-command four-area product demo | `python -m forecasting.run_portfolio_demo` | `PORTFOLIO_DEMO.md` |
 | Descriptive demand/weather analytics | `python -m forecasting.run_demand_weather_report` | `ANALYTICS_REPORT.md` |
 | Current-weather ingestion | `ingestion/weather/fetch_weather.py` | `architecture/data_flow.md` |
 | NGED energy ingestion | `ingestion/energy/fetch_energy.py` | `architecture/data_flow.md` |
 | OpenWeather forecast ingestion | `ingestion/forecast_weather/fetch_openweather_forecast.py` | `FORECAST_WEATHER.md` |
 | Fixed and rolling-origin baselines | `python -m forecasting.run_baseline` | `ROLLING_ORIGIN.md` |
 | Paired observed/target-weather comparison | `--model-set weather-comparison` | `FORECAST_WEATHER.md` |
+| Elapsed-time day/week baselines | `python -m forecasting.run_seasonal_baselines` | `SEASONAL_BASELINES.md` |
+| UTC/UK-local model-family scorecard | `python -m forecasting.run_model_family_scorecard` | `MODEL_SCORECARD.md` |
+| Calibration-only prediction intervals | `python -m forecasting.run_prediction_intervals` | `PREDICTION_INTERVALS.md` |
 | Forecast-versus-observed reconciliation | `python -m forecasting.run_weather_reconciliation` | `FORECAST_RECONCILIATION.md` |
 | Forecast-provider health/drift evidence | `python -m forecasting.run_provider_monitoring` | `PROVIDER_MONITORING.md` |
 | Fabric core medallion path | `fabric/notebooks/01` through `06` | `fabric/README.md` |
 | Optional Fabric forecast bronze/silver | `fabric/notebooks/01b`, `02b` | `fabric/FORECAST_WEATHER.md` |
 | Optional Fabric paired comparison | `fabric/notebooks/05c`, `06c` | `fabric/pipelines/target_weather_model_comparison_pipeline.md` |
+| Optional Fabric seasonal comparison | `fabric/notebooks/05d`, `06d` | `fabric/pipelines/seasonal_baseline_comparison_pipeline.md` |
+| Optional Fabric prediction intervals | `fabric/notebooks/05e`, `06e` | `fabric/pipelines/prediction_interval_pipeline.md` |
 
 ### Evidence and human authority
 
@@ -131,7 +139,19 @@ comparison + reconciliation + provider-health evidence
 human-review-only assessment and candidate records
 ```
 
-Spark Delta tables are canonical for the Fabric path. SQL analytics endpoint files are pass-through views; they do not reimplement silver cleaning, target matching, model fitting, or rolling-origin logic.
+### Seasonal, calendar, and uncertainty path
+
+```text
+retained causal demand features
+        ↓ target-minus-1-day / target-minus-1-week elapsed UTC matching
+persistence + previous-day + previous-week + ridge
+        ↓ paired UTC and Europe/London calendar feature contracts
+five-model area/horizon scorecard
+        ↓ causally available validation residuals only
+calibration-only test prediction intervals
+```
+
+Spark Delta tables are canonical for the Fabric path. SQL analytics endpoint files are pass-through views; they do not reimplement silver cleaning, target matching, model fitting, seasonal matching, calibration, or rolling-origin logic.
 
 ## Data sources and spatial contract
 
@@ -196,6 +216,23 @@ forecast_issued_at_utc
 
 It must have the same area/city identity, a valid time after feature time, a bounded difference from the demand target, and acceptable coverage. The OpenWeather adapter explicitly records retrieval time as a conservative issue/availability surrogate rather than inventing an unavailable provider model-run timestamp.
 
+### Elapsed seasonal references and calendar features
+
+Previous-day and previous-week baselines search for observations near:
+
+```text
+target_timestamp_utc - 1,440 minutes
+target_timestamp_utc - 10,080 minutes
+```
+
+They do not use fixed row offsets. References must be available at feature time and satisfy the configured tolerance and coverage contract.
+
+UTC remains the target, ordering, join, and audit identity. Europe/London fields are derived model features with a distinct feature-contract version. The scorecard requires identical controls, targets, split/origin evidence, and training boundaries before comparing UTC and UK-local ridge predictions.
+
+### Calibration-only intervals
+
+Interval width comes only from validation target labels available before the first test feature timestamp. Overlapping validation labels and all test labels are prohibited from choosing the radius. Empirical retained-test coverage is evidence, not an unconditional future guarantee.
+
 ## Local commands
 
 ### Descriptive analytics
@@ -250,6 +287,31 @@ python -m forecasting.run_baseline \
 
 For retained/exported data, provide both gold features and normalized forecast weather with `--input` and `--forecast-weather-input`.
 
+### Seasonal baselines and calendar scorecard
+
+Create UTC and UK-local seasonal runs over the same retained features, then compare them:
+
+```bash
+python -m forecasting.run_model_family_scorecard \
+  --utc-predictions seasonal_comparison_predictions.parquet \
+  --uk-local-predictions seasonal_comparison_uk_local_calendar_predictions.parquet \
+  --output-dir data/forecasting/model_family_scorecard \
+  --output-format parquet
+```
+
+See `SEASONAL_BASELINES.md`, `CALENDAR_FEATURES.md`, and `MODEL_SCORECARD.md`.
+
+### Calibration-only prediction intervals
+
+```bash
+python -m forecasting.run_prediction_intervals \
+  --predictions-input seasonal_comparison_predictions.parquet \
+  --coverage-levels 0.80 0.90 0.95 \
+  --min-calibration-rows 24 \
+  --output-dir data/forecasting/prediction_intervals \
+  --output-format parquet
+```
+
 ## Optional live local ingestion
 
 Copy the reviewed example configuration files, then keep credential values outside the repository:
@@ -297,6 +359,12 @@ Optional manual evidence subflows:
 
 05c_target_weather_model_comparison
 06c_target_weather_comparison_quality_checks
+
+05d_seasonal_baseline_comparison
+06d_seasonal_baseline_quality_checks
+
+05e_prediction_intervals
+06e_prediction_interval_quality_checks
 ```
 
 The optional subflows remain unscheduled. Successful execution does not change the active observed-weather baseline and does not authorize promotion.
@@ -342,6 +410,6 @@ A live Fabric pilot remains an external, named human operation requiring a curre
 
 ## Current boundary
 
-The repository has source adapters, local and Fabric transformation logic, descriptive analytics, historical forecast evaluation, provider-quality evidence, recovery controls, and manual pilot contracts. It does not claim that a live Fabric workspace has been deployed or that the target-weather candidate is production-approved.
+The repository has source adapters, local and Fabric transformation logic, descriptive analytics, historical target-weather and seasonal evaluation, paired calendar scorecards, calibration-only interval evidence, provider-quality evidence, recovery controls, and manual pilot contracts. It does not claim that a live Fabric workspace has been deployed, that empirical interval coverage is guaranteed under shift, or that any candidate is production-approved.
 
 See `ROADMAP.md` for the next dependency-ordered increment.
