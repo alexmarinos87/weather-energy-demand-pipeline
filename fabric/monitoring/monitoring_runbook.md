@@ -2,7 +2,7 @@
 
 ## Daily checks
 
-- Review the latest Data Factory pipeline status.
+- Review the latest ordinary Data Factory pipeline status.
 - Query `dq_run_results` for errors and warnings.
 - Confirm expected `source_area` values in silver and gold.
 - Confirm no cross-area or future-weather match failures.
@@ -13,6 +13,18 @@
 - Review actual target delay and matched/eligible coverage by source area.
 - Review unmatched-weather and freshness warnings.
 - Confirm complete-snapshot pagination metadata on recent energy raw files.
+
+## Manual interval checks
+
+After a reviewed interval subflow:
+
+- confirm one `point_prediction_run_id` and one `seasonal_comparison_run_id`;
+- confirm every area/resource/city/horizon/model slice has the intended coverage levels;
+- confirm `calibration_label_available_through_utc < evaluation_feature_start_utc`;
+- compare empirical coverage with the nominal target without treating it as a guarantee;
+- compare average, median, minimum, and maximum interval width by area, horizon, model, and coverage level;
+- inspect calibration row counts and radii before comparing runs; and
+- confirm `06e_prediction_interval_quality_checks` passed before retaining the evidence.
 
 ## Useful SQL
 
@@ -69,29 +81,56 @@ ORDER BY
 
 ```sql
 SELECT TOP (200)
+    interval_run_timestamp_utc,
+    interval_run_id,
+    point_prediction_run_id,
+    seasonal_comparison_run_id,
+    source_area,
+    requested_horizon_minutes,
+    model_name,
+    target_coverage_level,
+    calibration_observation_count,
+    calibration_quantile_rank,
+    calibration_radius_mw,
+    calibration_label_available_through_utc,
+    evaluation_observation_count,
+    empirical_coverage_pct,
+    average_interval_width_mw,
+    median_interval_width_mw,
+    minimum_interval_width_mw,
+    maximum_interval_width_mw
+FROM dbo.forecast_prediction_interval_metrics
+ORDER BY
+    interval_run_timestamp_utc DESC,
+    source_area,
+    requested_horizon_minutes,
+    target_coverage_level,
+    model_name;
+```
+
+```sql
+SELECT TOP (200)
+    interval_run_timestamp_utc,
     source_area,
     feature_timestamp_utc,
     event_timestamp_utc AS target_timestamp_utc,
     requested_horizon_minutes,
-    target_tolerance_minutes,
-    horizon_steps,
-    horizon_minutes,
-    target_delay_minutes,
-    evaluation_contract_version,
-    origin_fold,
-    origin_count,
-    origin_cutoff_utc,
-    training_observation_count,
-    current_demand_mw,
+    model_name,
+    target_coverage_level,
     actual_demand_mw,
-    predicted_demand_mw,
-    trained_through_utc
-FROM dbo.forecast_baseline_predictions
+    point_prediction_mw,
+    lower_prediction_mw,
+    upper_prediction_mw,
+    interval_width_mw,
+    interval_covered,
+    calibration_label_available_through_utc
+FROM dbo.forecast_prediction_intervals
 ORDER BY
-    run_timestamp_utc DESC,
+    interval_run_timestamp_utc DESC,
     source_area,
     requested_horizon_minutes,
-    origin_fold,
+    target_coverage_level,
+    model_name,
     event_timestamp_utc;
 ```
 
@@ -125,6 +164,10 @@ Holdout runs use `evaluation_contract_version=fixed-holdout-v1` and null origin 
 - Unsupported-horizon, delay-tolerance, low-coverage, or label-availability failures are blocking correctness defects.
 - An evaluation-contract failure usually means the run mixed holdout and rolling fields, omitted origin evidence, or placed validation/test rows in the wrong fold.
 - An origin-sequence failure means folds are missing, cutoffs or training history moved backwards, or an evaluation timestamp was reused.
+- A calibration-causality failure means an overlapping validation label or test-period label influenced interval width.
+- A finite-sample-rank failure means the retained radius does not match the configured coverage level and calibration count.
+- A fixed-radius or metric-consistency failure means row evidence and summary evidence diverged.
+- Low empirical interval coverage or wider intervals are product evidence to investigate, not permission to recalibrate automatically.
 - Zero eligible targets usually mean retained history is shorter than the configured horizon for a source group.
 - Low matched/eligible coverage usually means source gaps exceeded `TARGET_TOLERANCE_MINUTES`; investigate source cadence before relaxing the control.
 - Insufficient-history failures may occur after target matching and overlap purging; reduce rolling fold count only when the required evaluation resolution is genuinely lower.

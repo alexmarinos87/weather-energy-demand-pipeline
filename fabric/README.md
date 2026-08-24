@@ -4,8 +4,10 @@
 
 - Lakehouse: `weather_energy_lakehouse`
 - Environment: `weather_energy_env`
-- Notebooks: `01_ingest_api_to_bronze`, `02_bronze_to_silver`, `03_build_gold_tables`, `04_data_quality_checks`, `05_baseline_forecasting`, `06_forecast_quality_checks`
+- Ordinary notebooks: `01_ingest_api_to_bronze`, `02_bronze_to_silver`, `03_build_gold_tables`, `04_data_quality_checks`, `05_baseline_forecasting`, `06_forecast_quality_checks`
+- Optional/manual evidence notebooks: `05c_target_weather_model_comparison`, `06c_target_weather_comparison_quality_checks`, `05d_seasonal_baseline_comparison`, `06d_seasonal_baseline_quality_checks`, `05e_prediction_intervals`, `06e_prediction_interval_quality_checks`
 - Data Factory pipeline: `weather_energy_demand_pipeline`
+- Manual subflows: `seasonal_baseline_comparison_pipeline`, `prediction_interval_pipeline`
 
 Attach the Lakehouse and Environment to every notebook.
 
@@ -24,8 +26,10 @@ Contracts uploaded to `Files/data-contracts/`:
 - `gold_features_schema.json`
 - `forecast_evaluation_schema.json`
 - `rolling_origin_evaluation_schema.json`
+- `prediction_interval_schema.json`
+- `prediction_interval_metrics_schema.json`
 
-Tables:
+Ordinary tables:
 
 - `silver_weather`
 - `silver_energy`
@@ -35,6 +39,15 @@ Tables:
 - `forecast_baseline_predictions`
 - `forecast_baseline_metrics`
 - `dq_run_results`
+
+Optional/manual evidence tables:
+
+- `forecast_weather_comparison_predictions`
+- `forecast_weather_comparison_metrics`
+- `forecast_seasonal_comparison_predictions`
+- `forecast_seasonal_comparison_metrics`
+- `forecast_prediction_intervals`
+- `forecast_prediction_interval_metrics`
 
 ## Required source binding
 
@@ -66,6 +79,15 @@ Set `SOURCE_AREA`, `WEATHER_CITY`, and `NATIONAL_GRID_RESOURCE_ID` as one valid 
 | `EVALUATION_MODE` | `holdout` | `holdout` or explicit `rolling-origin` |
 | `ROLLING_ORIGIN_FOLDS` | `3` | Total origins in rolling mode; all but the final origin use validation history |
 | `MAX_EXPECTED_DATA_LAG_HOURS` | `3` | Freshness warning threshold |
+
+Manual interval parameters are documented separately in
+`fabric/pipelines/prediction_interval_pipeline.md`:
+
+```text
+POINT_PREDICTION_RUN_ID
+COVERAGE_LEVELS=0.80,0.90,0.95
+MIN_CALIBRATION_ROWS=24
+```
 
 ## Bounded time-horizon forecasting
 
@@ -101,18 +123,45 @@ The forecasting notebook rejects incomplete or non-monotonic origin evidence bef
 
 Prediction and metric tables append by run ID. Define a retention or compaction policy before increasing schedule frequency, fold count, or retained history.
 
+## Calibration-only prediction interval parity
+
+`05e_prediction_intervals` consumes one retained
+`forecast_seasonal_comparison_predictions` run. It never fits or refits a point
+model.
+
+For each source area, resource, city, horizon, model, and feature contract, it:
+
+1. finds the first final-test feature timestamp;
+2. keeps only validation residuals whose target timestamp is earlier than that
+   boundary;
+3. requires the configured minimum calibration history;
+4. applies the finite-sample rank `ceil((n + 1) * q)`, clipped to `[1, n]`; and
+5. writes symmetric test intervals and empirical coverage/width metrics.
+
+`06e_prediction_interval_quality_checks` independently validates the source-run
+binding, exact four-model pairs, calibration causality, finite-sample rank,
+fixed radius, coverage-level completeness, interval bounds, metrics, and final
+test origin.
+
+The interval subflow is manual. Empirical coverage is retained evidence and not
+a guarantee after distribution shift.
+
 ## Deployment
 
 1. Create the Lakehouse and Environment.
 2. Upload all versioned contracts.
-3. Import the six notebooks and attach the Lakehouse.
-4. Configure secure credentials or connection-backed secret lookup.
-5. Create the Data Factory pipeline from the repository specification.
-6. Configure the source binding and time-horizon parameters.
-7. Keep `EVALUATION_MODE=holdout` for the ordinary run, or select `rolling-origin` with a reviewed fold count.
-8. Run ingestion, silver, gold, source/gold quality, forecasting, and forecast quality once manually.
-9. Inspect requested horizon, actual delay, target coverage, evaluation contract, origin evidence, model metrics, and `dq_run_results`.
-10. Create SQL endpoint views only when stable analyst-facing names are useful.
-11. Enable the schedule after quota and capacity validation.
+3. Import the six ordinary notebooks and attach the Lakehouse.
+4. Import optional evidence notebooks only when their dependent tables are required.
+5. Configure secure credentials or connection-backed secret lookup.
+6. Create the ordinary Data Factory pipeline from the repository specification.
+7. Configure the source binding and time-horizon parameters.
+8. Keep `EVALUATION_MODE=holdout` for the ordinary run, or select `rolling-origin` with a reviewed fold count.
+9. Run ingestion, silver, gold, source/gold quality, forecasting, and forecast quality once manually.
+10. Run the seasonal and interval subflows manually when reviewed evidence is required.
+11. Inspect requested horizon, actual delay, target coverage, evaluation contract, origin evidence, model metrics, interval coverage/width, and `dq_run_results`.
+12. Create SQL endpoint views only when stable analyst-facing names are useful.
+13. Enable the ordinary schedule after quota and capacity validation; do not schedule the evidence subflows by default.
 
-Spark Delta tables are canonical. SQL endpoint views are pass-through views, avoiding a second implementation of joins, feature windows, target matching, origin construction, or model logic.
+Spark Delta tables are canonical. SQL endpoint views are pass-through views,
+avoiding a second implementation of joins, feature windows, target matching,
+origin construction, calibration, interval construction, or model logic.
