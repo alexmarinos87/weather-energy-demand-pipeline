@@ -39,14 +39,28 @@ checks pass.
 | G22 | Interval coverage, width, calibration-history, and freshness monitoring without automatic recalibration | Implemented as advisory local evidence |
 | G23 | Fabric parity for advisory interval monitoring over retained interval metrics without automatic recalibration | Implemented as an optional manual subflow |
 | G24 | Multi-area portfolio-demo integration for repeated interval-health evidence and advisory operator reporting | Implemented |
-| G25 | Reproducible interval-health trend datasets and thin-client reporting across area, horizon, model, and coverage slices | Next |
+| G25a | Reproducible interval-health trend datasets across area, horizon, model, and coverage slices | Implemented locally |
+| G25b | Thin-client Markdown, HTML, and notebook reporting over retained interval-health trend datasets | Implemented locally |
+| G26 | Human-reviewed interval-monitoring policy sensitivity evidence without automatic threshold, interval, model, schedule, or promotion changes | Next |
+
+Previous unsplit status before PRs #57–#58:
+
+```text
+G25 | Reproducible interval-health trend datasets and thin-client reporting across area, horizon, model, and coverage slices | Next
+```
+
+The historical line above is retained only to make the roadmap transition from
+the former combined goal explicit; the current status is defined by G25a and
+G25b in the table.
 
 ## Product-quality sequence
 
-The next product-quality work should turn the retained repeated interval-health
-history into reproducible trend datasets and a thin-client report without live
-source calls, alert delivery, automatic recalibration, model changes, schedule
-changes, or promotion changes.
+The next product-quality work should compare the retained interval-health
+outcomes under a bounded set of reviewed monitoring-policy scenarios. It should
+show whether healthy, warning, and failed conclusions are robust to reasonable
+threshold choices without changing the active monitoring policy, recalibrating
+an interval, refitting a model, activating a schedule, promoting a candidate, or
+delivering an alert.
 
 ## Dependency rules
 
@@ -143,6 +157,17 @@ changes, or promotion changes.
   nine complete runs for each healthy/warning/failed scenario, reproduce status
   and check identities from the retained history, and keep every automatic
   action and alert-delivery flag false.
+- Interval-health trend datasets must retain every exact monitoring slice,
+  preserve the complete run sequence, label recent/reference windows without
+  dropping older evidence, and leave drift values null when reference history
+  is insufficient.
+- Thin-client interval-health reports must read only retained trend datasets,
+  preserve the retained monitor status, and must not rerun monitoring logic,
+  construct intervals, or apply an independent threshold policy.
+- Monitoring-policy sensitivity evidence may compare reviewed candidate
+  thresholds, but it must not update the active policy, mutate retained results,
+  recalibrate intervals, change models or schedules, promote candidates, or
+  deliver alerts.
 
 ## Reusable PR workflow
 
