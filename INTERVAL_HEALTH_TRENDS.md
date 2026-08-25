@@ -10,7 +10,9 @@ created by the portfolio interval-health demonstration or equivalent exported
 evidence. It does not call a live source, fit or refit a model, or change any
 forecasting state. In particular, it does not recalculate an interval radius,
 change a monitoring threshold, activate a schedule, promote a candidate, or
-deliver an alert.
+deliver an alert. Automatic recalibration is not performed; the lower-case
+contract phrase is explicit: automatic recalibration remains outside this
+reporting layer.
 
 ## Input contract
 
