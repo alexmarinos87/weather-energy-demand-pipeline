@@ -7,9 +7,10 @@ reproducible analyst-facing datasets without changing any forecasting state.
 
 It consumes the repeated interval metric history and retained scenario summaries
 created by the portfolio interval-health demonstration or equivalent exported
-evidence. It does not call a live source, fit or refit a model, recalculate an
-interval radius, change a monitoring threshold, activate a schedule, promote a
-candidate, or deliver an alert.
+evidence. It does not call a live source, fit or refit a model, or change any
+forecasting state. In particular, it does not recalculate an interval radius,
+change a monitoring threshold, activate a schedule, promote a candidate, or
+deliver an alert.
 
 ## Input contract
 
