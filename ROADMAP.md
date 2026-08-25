@@ -41,7 +41,8 @@ checks pass.
 | G24 | Multi-area portfolio-demo integration for repeated interval-health evidence and advisory operator reporting | Implemented |
 | G25a | Reproducible interval-health trend datasets across area, horizon, model, and coverage slices | Implemented locally |
 | G25b | Thin-client Markdown, HTML, and notebook reporting over retained interval-health trend datasets | Implemented locally |
-| G26 | Human-reviewed interval-monitoring policy sensitivity evidence without automatic threshold, interval, model, schedule, or promotion changes | Next |
+| G26 | Human-reviewed interval-monitoring policy sensitivity evidence without automatic threshold, interval, model, schedule, or promotion changes | Implemented locally |
+| G27 | Immutable named monitoring-policy review decision without candidate-threshold activation | Next |
 
 Previous unsplit status before PRs #57–#58:
 
@@ -55,12 +56,12 @@ G25b in the table.
 
 ## Product-quality sequence
 
-The next product-quality work should compare the retained interval-health
-outcomes under a bounded set of reviewed monitoring-policy scenarios. It should
-show whether healthy, warning, and failed conclusions are robust to reasonable
-threshold choices without changing the active monitoring policy, recalibrating
-an interval, refitting a model, activating a schedule, promoting a candidate, or
-delivering an alert.
+The next product-quality work should bind one retained G26 sensitivity run to an
+immutable named human decision. The decision may retain the active policy,
+reject a candidate, or request a revised candidate, but it must not activate
+candidate thresholds, update the checked-in monitoring policy, recalibrate an
+interval, refit a model, change a schedule, promote a candidate, or deliver an
+alert.
 
 ## Dependency rules
 
@@ -168,6 +169,10 @@ delivering an alert.
   thresholds, but it must not update the active policy, mutate retained results,
   recalibrate intervals, change models or schedules, promote candidates, or
   deliver alerts.
+- A monitoring-policy review decision must bind one retained sensitivity run,
+  identify a named reviewer and review ticket, and record only retain, reject,
+  or request-revision evidence. It must not activate thresholds or mutate the
+  active policy.
 
 ## Reusable PR workflow
 
