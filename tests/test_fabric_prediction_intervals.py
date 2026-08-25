@@ -119,7 +119,7 @@ def test_fabric_interval_pipeline_is_manual_non_promoting_and_non_refitting():
     assert "Do not enable a trigger" in pipeline
 
 
-def test_roadmap_records_fabric_interval_monitoring_and_advances_to_portfolio_history():
+def test_roadmap_records_portfolio_interval_health_and_advances_to_trends():
     roadmap = text("ROADMAP.md")
     assert "G20b | Fabric parity for calibration-only prediction intervals" in roadmap
     assert "G21a | Paired area-and-horizon model-family scorecards" in roadmap
@@ -127,4 +127,5 @@ def test_roadmap_records_fabric_interval_monitoring_and_advances_to_portfolio_hi
     assert "G21c | Multi-area portfolio-demo integration for independently validated interval evidence | Implemented" in roadmap
     assert "G22 | Interval coverage, width, calibration-history, and freshness monitoring without automatic recalibration | Implemented as advisory local evidence" in roadmap
     assert "G23 | Fabric parity for advisory interval monitoring over retained interval metrics without automatic recalibration | Implemented as an optional manual subflow" in roadmap
-    assert "G24 | Multi-area portfolio-demo integration for repeated interval-health evidence and advisory operator reporting | Next" in roadmap
+    assert "G24 | Multi-area portfolio-demo integration for repeated interval-health evidence and advisory operator reporting | Implemented" in roadmap
+    assert "G25 | Reproducible interval-health trend datasets and thin-client reporting across area, horizon, model, and coverage slices | Next" in roadmap

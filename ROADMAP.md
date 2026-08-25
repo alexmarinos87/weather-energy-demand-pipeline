@@ -38,15 +38,15 @@ checks pass.
 | G21c | Multi-area portfolio-demo integration for independently validated interval evidence | Implemented |
 | G22 | Interval coverage, width, calibration-history, and freshness monitoring without automatic recalibration | Implemented as advisory local evidence |
 | G23 | Fabric parity for advisory interval monitoring over retained interval metrics without automatic recalibration | Implemented as an optional manual subflow |
-| G24 | Multi-area portfolio-demo integration for repeated interval-health evidence and advisory operator reporting | Next |
+| G24 | Multi-area portfolio-demo integration for repeated interval-health evidence and advisory operator reporting | Implemented |
+| G25 | Reproducible interval-health trend datasets and thin-client reporting across area, horizon, model, and coverage slices | Next |
 
 ## Product-quality sequence
 
-The next product-quality work should create a credential-free repeated interval
-history for every contracted source area, run the shared advisory monitor over
-that retained history, and add a manifest-bound operator report without
-automatic recalibration, model changes, schedule changes, promotion changes, or
-alert delivery.
+The next product-quality work should turn the retained repeated interval-health
+history into reproducible trend datasets and a thin-client report without live
+source calls, alert delivery, automatic recalibration, model changes, schedule
+changes, or promotion changes.
 
 ## Dependency rules
 
@@ -139,6 +139,10 @@ alert delivery.
 - Repeated portfolio interval-health evidence must bind each synthetic run,
   health check, summary, and operator report into one immutable manifest while
   preserving all source-area identities and no-side-effect flags.
+- Portfolio interval-health verification must reopen all four artifacts, retain
+  nine complete runs for each healthy/warning/failed scenario, reproduce status
+  and check identities from the retained history, and keep every automatic
+  action and alert-delivery flag false.
 
 ## Reusable PR workflow
 

@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "portfolio_interval_health_manifest_v1",
+  "type": "object",
+  "required": [
+    "health_demo_run_id",
+    "health_demo_run_timestamp_utc",
+    "source_mode",
+    "output_format",
+    "source_area_contract_version",
+    "source_groups",
+    "source_bindings",
+    "interval_health_scenarios",
+    "interval_health_expected_status_by_scenario",
+    "interval_history_runs_per_scenario",
+    "interval_health_models",
+    "interval_health_horizons_minutes",
+    "interval_health_coverage_levels",
+    "interval_health_source_interval_contract_version",
+    "interval_health_policy_version",
+    "interval_health_monitoring_contract_version",
+    "minimum_interval_calibration_rows",
+    "artifacts",
+    "credential_free",
+    "live_source_calls_performed",
+    "fabric_operations_performed",
+    "schedule_activation_performed",
+    "automatic_remediation_performed",
+    "automatic_recalibration_performed",
+    "automatic_model_change_performed",
+    "automatic_promotion_performed",
+    "alert_delivery_performed",
+    "external_publication_performed",
+    "manifest_contract_version",
+    "manifest_hash"
+  ],
+  "properties": {
+    "health_demo_run_id": {
+      "type": "string",
+      "pattern": "^pih-[0-9a-f]{24}$"
+    },
+    "health_demo_run_timestamp_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source_mode": {"const": "deterministic_credential_free_demo"},
+    "output_format": {"enum": ["csv", "parquet"]},
+    "source_area_contract_version": {"type": "string", "minLength": 1},
+    "source_groups": {"const": 4},
+    "source_bindings": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": ["source_area", "resource_id", "city"],
+        "properties": {
+          "source_area": {
+            "enum": [
+              "east_midlands",
+              "south_wales",
+              "south_west",
+              "west_midlands"
+            ]
+          },
+          "resource_id": {"type": "string", "minLength": 1},
+          "city": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "interval_health_scenarios": {
+      "const": ["healthy", "warning", "failed"]
+    },
+    "interval_health_expected_status_by_scenario": {
+      "const": {
+        "healthy": "healthy",
+        "warning": "warning",
+        "failed": "failed"
+      }
+    },
+    "interval_history_runs_per_scenario": {"const": 9},
+    "interval_health_models": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "persistence_current_value",
+          "ridge_weather_lag",
+          "seasonal_previous_day",
+          "seasonal_previous_week"
+        ]
+      }
+    },
+    "interval_health_horizons_minutes": {"const": [30, 60]},
+    "interval_health_coverage_levels": {"const": [0.8, 0.9, 0.95]},
+    "interval_health_source_interval_contract_version": {
+      "const": "split-conformal-absolute-residual-v1"
+    },
+    "interval_health_policy_version": {
+      "const": "prediction-interval-monitoring-policy-v1"
+    },
+    "interval_health_monitoring_contract_version": {
+      "const": "prediction-interval-monitoring-v1"
+    },
+    "minimum_interval_calibration_rows": {"const": 24},
+    "artifacts": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": [
+          "artifact_role",
+          "relative_path",
+          "content_type",
+          "size_bytes",
+          "sha256",
+          "row_count"
+        ],
+        "properties": {
+          "artifact_role": {
+            "enum": [
+              "repeated_interval_metric_history",
+              "prediction_interval_health_checks",
+              "prediction_interval_health_summary",
+              "interval_health_operator_report"
+            ]
+          },
+          "relative_path": {"type": "string", "minLength": 1},
+          "content_type": {
+            "enum": ["text/csv", "application/x-parquet", "text/markdown"]
+          },
+          "size_bytes": {"type": "integer", "minimum": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "row_count": {"type": ["integer", "null"], "minimum": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "credential_free": {"const": true},
+    "live_source_calls_performed": {"const": false},
+    "fabric_operations_performed": {"const": false},
+    "schedule_activation_performed": {"const": false},
+    "automatic_remediation_performed": {"const": false},
+    "automatic_recalibration_performed": {"const": false},
+    "automatic_model_change_performed": {"const": false},
+    "automatic_promotion_performed": {"const": false},
+    "alert_delivery_performed": {"const": false},
+    "external_publication_performed": {"const": false},
+    "manifest_contract_version": {
+      "const": "portfolio-interval-health-manifest-v1"
+    },
+    "manifest_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "additionalProperties": false
+}
