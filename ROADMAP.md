@@ -42,7 +42,9 @@ checks pass.
 | G25a | Reproducible interval-health trend datasets across area, horizon, model, and coverage slices | Implemented locally |
 | G25b | Thin-client Markdown, HTML, and notebook reporting over retained interval-health trend datasets | Implemented locally |
 | G26 | Human-reviewed interval-monitoring policy sensitivity evidence without automatic threshold, interval, model, schedule, or promotion changes | Implemented locally |
-| G27 | Immutable named monitoring-policy review decision without candidate-threshold activation | Next |
+| G27 | Immutable named monitoring-policy review decision without candidate-threshold activation | Implemented locally |
+| G28 | Append-only verified policy-decision ledger with duplicate and conflict detection | Implemented locally |
+| G29 | Human-authored candidate-revision package bound to a G27 revision request without threshold activation | Next |
 
 Previous unsplit status before PRs #57–#58:
 
@@ -56,12 +58,12 @@ G25b in the table.
 
 ## Product-quality sequence
 
-The next product-quality work should bind one retained G26 sensitivity run to an
-immutable named human decision. The decision may retain the active policy,
-reject a candidate, or request a revised candidate, but it must not activate
-candidate thresholds, update the checked-in monitoring policy, recalibrate an
-interval, refit a model, change a schedule, promote a candidate, or deliver an
-alert.
+The next product-quality work should create one human-authored candidate-revision
+package only when a retained G27 decision explicitly requests revision. The
+package must bind the decision and source sensitivity evidence, explain the
+proposed threshold changes and compatibility impact, and remain non-activating.
+It must not update the checked-in policy, recalibrate an interval, refit a model,
+change a schedule, promote a candidate, or deliver an alert.
 
 ## Dependency rules
 
@@ -173,6 +175,11 @@ alert.
   identify a named reviewer and review ticket, and record only retain, reject,
   or request-revision evidence. It must not activate thresholds or mutate the
   active policy.
+- A policy-decision ledger must reopen every decision with its retained source
+  sensitivity summary, preserve chronological order, reject duplicate IDs and
+  conflicting decisions for one run/target pair, and keep all authority false.
+- A candidate-revision package must be bound to a request-revision decision and
+  remain a proposal only; it cannot update or activate the checked-in policy.
 
 ## Reusable PR workflow
 
