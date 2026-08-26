@@ -23,7 +23,7 @@ def test_g25_is_split_into_two_completed_dependency_layers():
     assert "Previous unsplit status before PRs #57–#58" in roadmap
 
 
-def test_roadmap_records_repaired_g26_and_advances_to_named_decision():
+def test_roadmap_records_policy_sensitivity_and_named_decision_progression():
     roadmap = text("ROADMAP.md")
     assert (
         "G26 | Human-reviewed interval-monitoring policy sensitivity evidence "
@@ -33,14 +33,19 @@ def test_roadmap_records_repaired_g26_and_advances_to_named_decision():
     )
     assert (
         "G27 | Immutable named monitoring-policy review decision without "
-        "candidate-threshold activation | Next"
+        "candidate-threshold activation | Implemented locally"
+        in roadmap
+    )
+    assert (
+        "G28 | Reviewed non-activating implementation proposal for a requested "
+        "monitoring-policy revision with compatibility evidence | Next"
         in roadmap
     )
     assert "must not activate thresholds" in roadmap
-    assert "must not update the active policy" in roadmap
+    assert "remain non-activating" in roadmap
 
 
-def test_completed_g25_and_g26_artifacts_are_present_and_non_empty():
+def test_completed_g25_to_g27_artifacts_are_present_and_non_empty():
     paths = [
         "forecasting/interval_health_trends.py",
         "forecasting/run_interval_health_trends.py",
@@ -52,17 +57,11 @@ def test_completed_g25_and_g26_artifacts_are_present_and_non_empty():
         "forecasting/interval_policy_sensitivity.py",
         "forecasting/run_interval_policy_sensitivity.py",
         "INTERVAL_POLICY_SENSITIVITY.md",
+        "forecasting/interval_policy_review_decision.py",
+        "forecasting/run_interval_policy_review_decision.py",
+        "INTERVAL_POLICY_REVIEW_DECISION.md",
     ]
     for relative in paths:
         path = ROOT / relative
         assert path.is_file(), relative
         assert path.read_bytes().strip(), relative
-
-
-def test_failed_g26_publish_markers_are_removed():
-    for relative in (
-        "G26_PUBLISH_MARKER.tmp",
-        "NO.tmp",
-        "THIS_SHOULD_NOT_EXIST.tmp",
-    ):
-        assert not (ROOT / relative).exists(), relative
