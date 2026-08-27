@@ -23,7 +23,7 @@ def test_g25_is_split_into_two_completed_dependency_layers():
     assert "Previous unsplit status before PRs #57–#58" in roadmap
 
 
-def test_roadmap_records_g26_through_g32_and_advances_to_g33():
+def test_roadmap_records_g26_through_g34_and_advances_to_g35():
     roadmap = text("ROADMAP.md")
     assert (
         "G26 | Human-reviewed interval-monitoring policy sensitivity evidence "
@@ -63,18 +63,29 @@ def test_roadmap_records_g26_through_g32_and_advances_to_g33():
     )
     assert (
         "G33 | Repository-base-bound dry-run implementation proposal over a "
-        "suitable G32 disposition without code application | Next"
+        "suitable G32 disposition without code application | Implemented locally"
+        in roadmap
+    )
+    assert (
+        "G34 | Immutable named review of one G33 dry run without code-change "
+        "authorization or creation | Implemented locally"
+        in roadmap
+    )
+    assert (
+        "G35 | Separate reviewed code-change PR applying one accepted G34 dry "
+        "run after exact-base revalidation, with no runtime activation | Next"
         in roadmap
     )
     assert "reject duplicate IDs and" in roadmap
     assert "address every" in roadmap
-    assert "cannot execute that comparison" in roadmap
     assert "reuse the canonical evaluator" in roadmap
-    assert "dry-run source diff" in roadmap
-    assert "remain non-applying and non-activating" in roadmap
+    assert "exact current repository base" in roadmap
+    assert "cannot apply or authorize the change" in roadmap
+    assert "cannot create, authorize, or merge that PR" in roadmap
+    assert "must revalidate every G33/G34 base" in roadmap
 
 
-def test_completed_g25_through_g32_artifacts_are_present_and_non_empty():
+def test_completed_g25_through_g34_artifacts_are_present_and_non_empty():
     paths = [
         "forecasting/interval_health_trends.py",
         "forecasting/run_interval_health_trends.py",
@@ -105,6 +116,14 @@ def test_completed_g25_through_g32_artifacts_are_present_and_non_empty():
         "forecasting/run_interval_policy_revision_disposition.py",
         "data-contracts/interval_policy_revision_disposition_schema.json",
         "INTERVAL_POLICY_REVISION_DISPOSITION.md",
+        "forecasting/interval_policy_implementation_dry_run.py",
+        "forecasting/run_interval_policy_implementation_dry_run.py",
+        "data-contracts/interval_policy_implementation_dry_run_schema.json",
+        "INTERVAL_POLICY_IMPLEMENTATION_DRY_RUN.md",
+        "forecasting/interval_policy_implementation_dry_run_review.py",
+        "forecasting/run_interval_policy_implementation_dry_run_review.py",
+        "data-contracts/interval_policy_implementation_dry_run_review_schema.json",
+        "INTERVAL_POLICY_IMPLEMENTATION_DRY_RUN_REVIEW.md",
     ]
     for relative in paths:
         path = ROOT / relative
