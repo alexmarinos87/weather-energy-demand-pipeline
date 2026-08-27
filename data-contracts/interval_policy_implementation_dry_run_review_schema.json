@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "interval_policy_implementation_dry_run_review_v1",
+  "type": "object",
+  "required": [
+    "implementation_dry_run_review_id",
+    "implementation_dry_run_review_revision",
+    "implementation_dry_run_review_sha256",
+    "source_implementation_dry_run_id",
+    "source_implementation_dry_run_sha256",
+    "repository_base_commit",
+    "repository_base_tree",
+    "policy_source_path",
+    "policy_source_sha256",
+    "policy_source_git_blob_sha1",
+    "active_policy_sha256",
+    "proposed_policy_sha256",
+    "revised_candidate_id",
+    "revised_candidate_version",
+    "changed_threshold_fields",
+    "changed_threshold_count",
+    "intended_paths",
+    "validation_commands",
+    "review_decision",
+    "review_effect",
+    "requested_updates",
+    "reviewer_name",
+    "reviewer_role",
+    "review_ticket",
+    "rationale",
+    "reviewed_at_utc",
+    "named_human_review_confirmed",
+    "follow_up_human_action_required",
+    "next_action",
+    "implementation_dry_run_review_contract_version",
+    "code_change_authorized",
+    "code_change_created",
+    "implementation_authorized",
+    "implementation_applied",
+    "source_file_mutated",
+    "threshold_activation_authorized",
+    "active_policy_updated",
+    "candidate_thresholds_activated",
+    "source_proposal_mutated",
+    "source_disposition_mutated",
+    "retained_evidence_mutated",
+    "interval_recalibration_performed",
+    "model_change_performed",
+    "schedule_change_performed",
+    "promotion_change_performed",
+    "alert_delivery_performed",
+    "deployment_performed",
+    "external_publication_performed"
+  ],
+  "properties": {
+    "implementation_dry_run_review_id": {
+      "type": "string",
+      "pattern": "^ipidr-[0-9a-f]{24}$"
+    },
+    "implementation_dry_run_review_revision": {
+      "const": 1
+    },
+    "implementation_dry_run_review_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "repository_base_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "repository_base_tree": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "review_decision": {
+      "enum": [
+        "accept_for_separate_code_change_pr",
+        "reject_implementation_dry_run",
+        "request_dry_run_revision"
+      ]
+    },
+    "review_effect": {
+      "enum": [
+        "separate_code_change_pr_required",
+        "no_further_action_recorded",
+        "revised_dry_run_required"
+      ]
+    },
+    "requested_updates": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "reviewer_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reviewer_role": {
+      "type": "string",
+      "minLength": 1
+    },
+    "review_ticket": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 30
+    },
+    "reviewed_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "named_human_review_confirmed": {
+      "const": true
+    },
+    "follow_up_human_action_required": {
+      "type": "boolean"
+    },
+    "next_action": {
+      "enum": [
+        "separate_code_change_pr_required",
+        "no_further_action_recorded",
+        "revised_dry_run_required"
+      ]
+    },
+    "implementation_dry_run_review_contract_version": {
+      "const": "interval-policy-implementation-dry-run-review-v1"
+    },
+    "code_change_authorized": {"const": false},
+    "code_change_created": {"const": false},
+    "implementation_authorized": {"const": false},
+    "implementation_applied": {"const": false},
+    "source_file_mutated": {"const": false},
+    "threshold_activation_authorized": {"const": false},
+    "active_policy_updated": {"const": false},
+    "candidate_thresholds_activated": {"const": false},
+    "source_proposal_mutated": {"const": false},
+    "source_disposition_mutated": {"const": false},
+    "retained_evidence_mutated": {"const": false},
+    "interval_recalibration_performed": {"const": false},
+    "model_change_performed": {"const": false},
+    "schedule_change_performed": {"const": false},
+    "promotion_change_performed": {"const": false},
+    "alert_delivery_performed": {"const": false},
+    "deployment_performed": {"const": false},
+    "external_publication_performed": {"const": false}
+  },
+  "additionalProperties": true
+}
