@@ -23,7 +23,7 @@ def test_g25_is_split_into_two_completed_dependency_layers():
     assert "Previous unsplit status before PRs #57–#58" in roadmap
 
 
-def test_roadmap_records_g26_through_g31_and_advances_to_g32():
+def test_roadmap_records_g26_through_g32_and_advances_to_g33():
     roadmap = text("ROADMAP.md")
     assert (
         "G26 | Human-reviewed interval-monitoring policy sensitivity evidence "
@@ -58,16 +58,23 @@ def test_roadmap_records_g26_through_g31_and_advances_to_g32():
     )
     assert (
         "G32 | Immutable named human disposition over one G31 result without "
-        "active-policy mutation | Next"
+        "active-policy mutation | Implemented locally"
+        in roadmap
+    )
+    assert (
+        "G33 | Repository-base-bound dry-run implementation proposal over a "
+        "suitable G32 disposition without code application | Next"
         in roadmap
     )
     assert "reject duplicate IDs and" in roadmap
     assert "address every" in roadmap
     assert "cannot execute that comparison" in roadmap
     assert "reuse the canonical evaluator" in roadmap
+    assert "dry-run source diff" in roadmap
+    assert "remain non-applying and non-activating" in roadmap
 
 
-def test_completed_g25_through_g31_artifacts_are_present_and_non_empty():
+def test_completed_g25_through_g32_artifacts_are_present_and_non_empty():
     paths = [
         "forecasting/interval_health_trends.py",
         "forecasting/run_interval_health_trends.py",
@@ -94,6 +101,10 @@ def test_completed_g25_through_g31_artifacts_are_present_and_non_empty():
         "forecasting/interval_policy_revision_sensitivity.py",
         "forecasting/run_interval_policy_revision_sensitivity.py",
         "INTERVAL_POLICY_REVISION_SENSITIVITY.md",
+        "forecasting/interval_policy_revision_disposition.py",
+        "forecasting/run_interval_policy_revision_disposition.py",
+        "data-contracts/interval_policy_revision_disposition_schema.json",
+        "INTERVAL_POLICY_REVISION_DISPOSITION.md",
     ]
     for relative in paths:
         path = ROOT / relative
