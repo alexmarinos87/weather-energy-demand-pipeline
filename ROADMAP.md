@@ -47,7 +47,8 @@ checks pass.
 | G29 | Human-authored candidate-revision package bound to a G27 revision request without threshold activation | Implemented locally |
 | G30 | Immutable named review of one candidate-revision package without sensitivity execution or threshold activation | Implemented locally |
 | G31 | Evidence-only revised-candidate sensitivity comparison bound to an accepted G30 review | Implemented locally |
-| G32 | Immutable named human disposition over one G31 result without active-policy mutation | Next |
+| G32 | Immutable named human disposition over one G31 result without active-policy mutation | Implemented locally |
+| G33 | Repository-base-bound dry-run implementation proposal over a suitable G32 disposition without code application | Next |
 
 Previous unsplit status before PRs #57–#58:
 
@@ -61,13 +62,14 @@ G25b in the table.
 
 ## Product-quality sequence
 
-The next product-quality work should bind one complete G31 revised-candidate
-sensitivity result to an immutable named G32 human disposition. The reviewer may
-retain the active policy, reject the revised candidate, request another candidate
-revision, or record that the revised candidate is suitable for a separate
-implementation proposal. The disposition must not update the checked-in policy,
-activate thresholds, recalibrate an interval, refit a model, change a schedule,
-promote a candidate, deliver an alert, deploy, or publish externally.
+The next product-quality work should bind one G32
+`suitable_for_separate_implementation_proposal` disposition to a repository-base-
+bound G33 dry-run implementation proposal. The proposal should retain the exact
+current and proposed monitoring-policy values, intended source paths, a human-
+reviewed validation plan, and compatibility evidence against the current base.
+It must not edit the active policy, apply a patch, activate thresholds,
+recalibrate an interval, refit a model, change a schedule, promote a candidate,
+deliver an alert, deploy, or publish externally.
 
 ## Dependency rules
 
@@ -194,6 +196,9 @@ promote a candidate, deliver an alert, deploy, or publish externally.
   cannot safely evaluate.
 - A G32 disposition must bind one complete G31 result and remain a human evidence
   record only; it cannot mutate or activate the monitoring policy.
+- A G33 implementation proposal must bind a suitable G32 disposition and the
+  exact current repository base, describe the dry-run source diff and validation
+  plan, and remain non-applying and non-activating.
 
 ## Reusable PR workflow
 
