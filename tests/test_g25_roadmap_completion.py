@@ -23,7 +23,7 @@ def test_g25_is_split_into_two_completed_dependency_layers():
     assert "Previous unsplit status before PRs #57–#58" in roadmap
 
 
-def test_roadmap_records_g26_through_g28_and_advances_to_candidate_revision():
+def test_roadmap_records_g26_through_g31_and_advances_to_g32():
     roadmap = text("ROADMAP.md")
     assert (
         "G26 | Human-reviewed interval-monitoring policy sensitivity evidence "
@@ -43,14 +43,31 @@ def test_roadmap_records_g26_through_g28_and_advances_to_candidate_revision():
     )
     assert (
         "G29 | Human-authored candidate-revision package bound to a G27 revision "
-        "request without threshold activation | Next"
+        "request without threshold activation | Implemented locally"
+        in roadmap
+    )
+    assert (
+        "G30 | Immutable named review of one candidate-revision package without "
+        "sensitivity execution or threshold activation | Implemented locally"
+        in roadmap
+    )
+    assert (
+        "G31 | Evidence-only revised-candidate sensitivity comparison bound to "
+        "an accepted G30 review | Implemented locally"
+        in roadmap
+    )
+    assert (
+        "G32 | Immutable named human disposition over one G31 result without "
+        "active-policy mutation | Next"
         in roadmap
     )
     assert "reject duplicate IDs and" in roadmap
-    assert "remain a proposal only" in roadmap
+    assert "address every" in roadmap
+    assert "cannot execute that comparison" in roadmap
+    assert "reuse the canonical evaluator" in roadmap
 
 
-def test_completed_g25_through_g28_artifacts_are_present_and_non_empty():
+def test_completed_g25_through_g31_artifacts_are_present_and_non_empty():
     paths = [
         "forecasting/interval_health_trends.py",
         "forecasting/run_interval_health_trends.py",
@@ -68,6 +85,15 @@ def test_completed_g25_through_g28_artifacts_are_present_and_non_empty():
         "forecasting/interval_policy_decision_ledger.py",
         "forecasting/run_interval_policy_decision_ledger.py",
         "INTERVAL_POLICY_DECISION_LEDGER.md",
+        "forecasting/interval_policy_candidate_revision.py",
+        "forecasting/run_interval_policy_candidate_revision.py",
+        "INTERVAL_POLICY_CANDIDATE_REVISION.md",
+        "forecasting/interval_policy_candidate_revision_review.py",
+        "forecasting/run_interval_policy_candidate_revision_review.py",
+        "INTERVAL_POLICY_CANDIDATE_REVISION_REVIEW.md",
+        "forecasting/interval_policy_revision_sensitivity.py",
+        "forecasting/run_interval_policy_revision_sensitivity.py",
+        "INTERVAL_POLICY_REVISION_SENSITIVITY.md",
     ]
     for relative in paths:
         path = ROOT / relative

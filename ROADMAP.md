@@ -44,7 +44,10 @@ checks pass.
 | G26 | Human-reviewed interval-monitoring policy sensitivity evidence without automatic threshold, interval, model, schedule, or promotion changes | Implemented locally |
 | G27 | Immutable named monitoring-policy review decision without candidate-threshold activation | Implemented locally |
 | G28 | Append-only verified policy-decision ledger with duplicate and conflict detection | Implemented locally |
-| G29 | Human-authored candidate-revision package bound to a G27 revision request without threshold activation | Next |
+| G29 | Human-authored candidate-revision package bound to a G27 revision request without threshold activation | Implemented locally |
+| G30 | Immutable named review of one candidate-revision package without sensitivity execution or threshold activation | Implemented locally |
+| G31 | Evidence-only revised-candidate sensitivity comparison bound to an accepted G30 review | Implemented locally |
+| G32 | Immutable named human disposition over one G31 result without active-policy mutation | Next |
 
 Previous unsplit status before PRs #57–#58:
 
@@ -58,12 +61,13 @@ G25b in the table.
 
 ## Product-quality sequence
 
-The next product-quality work should create one human-authored candidate-revision
-package only when a retained G27 decision explicitly requests revision. The
-package must bind the decision and source sensitivity evidence, explain the
-proposed threshold changes and compatibility impact, and remain non-activating.
-It must not update the checked-in policy, recalibrate an interval, refit a model,
-change a schedule, promote a candidate, or deliver an alert.
+The next product-quality work should bind one complete G31 revised-candidate
+sensitivity result to an immutable named G32 human disposition. The reviewer may
+retain the active policy, reject the revised candidate, request another candidate
+revision, or record that the revised candidate is suitable for a separate
+implementation proposal. The disposition must not update the checked-in policy,
+activate thresholds, recalibrate an interval, refit a model, change a schedule,
+promote a candidate, deliver an alert, deploy, or publish externally.
 
 ## Dependency rules
 
@@ -178,8 +182,18 @@ change a schedule, promote a candidate, or deliver an alert.
 - A policy-decision ledger must reopen every decision with its retained source
   sensitivity summary, preserve chronological order, reject duplicate IDs and
   conflicting decisions for one run/target pair, and keep all authority false.
-- A candidate-revision package must be bound to a request-revision decision and
-  remain a proposal only; it cannot update or activate the checked-in policy.
+- A candidate-revision package must be bound to a request-revision decision,
+  contain complete validated source and revised configurations, address every
+  requested change and changed threshold, and remain non-activating.
+- A candidate-revision review may accept a package only for a separately
+  requested sensitivity comparison; it cannot execute that comparison or
+  activate thresholds.
+- A revised-candidate sensitivity comparison must reuse the canonical evaluator,
+  bind the complete review chain, preserve active-reference reproduction, and
+  reject monitoring-window geometry changes that retained aggregate trends
+  cannot safely evaluate.
+- A G32 disposition must bind one complete G31 result and remain a human evidence
+  record only; it cannot mutate or activate the monitoring policy.
 
 ## Reusable PR workflow
 
