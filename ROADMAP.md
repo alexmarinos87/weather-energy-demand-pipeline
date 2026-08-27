@@ -48,7 +48,9 @@ checks pass.
 | G30 | Immutable named review of one candidate-revision package without sensitivity execution or threshold activation | Implemented locally |
 | G31 | Evidence-only revised-candidate sensitivity comparison bound to an accepted G30 review | Implemented locally |
 | G32 | Immutable named human disposition over one G31 result without active-policy mutation | Implemented locally |
-| G33 | Repository-base-bound dry-run implementation proposal over a suitable G32 disposition without code application | Next |
+| G33 | Repository-base-bound dry-run implementation proposal over a suitable G32 disposition without code application | Implemented locally |
+| G34 | Immutable named review of one G33 dry run without code-change authorization or creation | Implemented locally |
+| G35 | Separate reviewed code-change PR applying one accepted G34 dry run after exact-base revalidation, with no runtime activation | Next |
 
 Previous unsplit status before PRs #57–#58:
 
@@ -62,14 +64,15 @@ G25b in the table.
 
 ## Product-quality sequence
 
-The next product-quality work should bind one G32
-`suitable_for_separate_implementation_proposal` disposition to a repository-base-
-bound G33 dry-run implementation proposal. The proposal should retain the exact
-current and proposed monitoring-policy values, intended source paths, a human-
-reviewed validation plan, and compatibility evidence against the current base.
-It must not edit the active policy, apply a patch, activate thresholds,
-recalibrate an interval, refit a model, change a schedule, promote a candidate,
-deliver an alert, deploy, or publish externally.
+The next product-quality work should create one separate G35 code-change PR only
+when a retained G34 review records `accept_for_separate_code_change_pr`. Before
+applying the accepted patch, that PR must revalidate the current repository base,
+policy source blob, active defaults, proposed-policy digest, intended paths, and
+validation commands. It must keep ordinary scheduling, alert delivery, Fabric
+execution, model selection, deployment, and external publication out of scope.
+Merging the code change updates checked-in defaults only; it must not claim that
+the revised policy has been operationally activated against any live schedule or
+production evidence.
 
 ## Dependency rules
 
@@ -196,9 +199,14 @@ deliver an alert, deploy, or publish externally.
   cannot safely evaluate.
 - A G32 disposition must bind one complete G31 result and remain a human evidence
   record only; it cannot mutate or activate the monitoring policy.
-- A G33 implementation proposal must bind a suitable G32 disposition and the
-  exact current repository base, describe the dry-run source diff and validation
-  plan, and remain non-applying and non-activating.
+- A G33 implementation dry run must bind a suitable G32 disposition, the exact
+  current repository base, and the exact policy source; it may describe a patch
+  and validation plan but cannot apply or authorize the change.
+- A G34 review must independently reopen the G33 evidence and may accept it only
+  for a separate code-change PR; it cannot create, authorize, or merge that PR.
+- A G35 code-change PR must revalidate every G33/G34 base and source binding
+  against its own current base before applying the reviewed diff, and the merge
+  must not imply operational policy activation.
 
 ## Reusable PR workflow
 
