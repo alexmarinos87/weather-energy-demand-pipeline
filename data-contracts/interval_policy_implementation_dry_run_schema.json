@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "interval_policy_implementation_dry_run_v1",
+  "type": "object",
+  "required": [
+    "implementation_dry_run_id",
+    "implementation_dry_run_revision",
+    "implementation_dry_run_sha256",
+    "repository_base_commit",
+    "repository_base_tree",
+    "policy_source_path",
+    "policy_source_sha256",
+    "policy_source_git_blob_sha1",
+    "active_policy_snapshot",
+    "proposed_policy_snapshot",
+    "active_to_proposed_changes",
+    "source_edits",
+    "dry_run_patch",
+    "intended_paths",
+    "validation_commands",
+    "prepared_by",
+    "preparer_role",
+    "implementation_ticket",
+    "rationale",
+    "prepared_at_utc",
+    "compatibility_status",
+    "next_review_action",
+    "repository_base_must_match",
+    "human_preparation_confirmed",
+    "implementation_dry_run_contract_version",
+    "implementation_authorized",
+    "implementation_applied",
+    "code_change_created",
+    "source_file_mutated",
+    "threshold_activation_authorized",
+    "active_policy_updated",
+    "candidate_thresholds_activated",
+    "source_disposition_mutated",
+    "source_package_mutated",
+    "source_decision_mutated",
+    "source_sensitivity_evidence_mutated",
+    "interval_recalibration_performed",
+    "model_change_performed",
+    "schedule_change_performed",
+    "promotion_change_performed",
+    "alert_delivery_performed",
+    "deployment_performed",
+    "external_publication_performed"
+  ],
+  "properties": {
+    "implementation_dry_run_id": {
+      "type": "string",
+      "pattern": "^ipid-[0-9a-f]{24}$"
+    },
+    "implementation_dry_run_revision": {
+      "const": 1
+    },
+    "implementation_dry_run_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "repository_base_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "repository_base_tree": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "policy_source_path": {
+      "const": "forecasting/interval_monitoring.py"
+    },
+    "policy_source_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "policy_source_git_blob_sha1": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "active_policy_snapshot": {
+      "type": "object"
+    },
+    "proposed_policy_snapshot": {
+      "type": "object"
+    },
+    "active_to_proposed_changes": {
+      "type": "array",
+      "minItems": 1
+    },
+    "source_edits": {
+      "type": "array",
+      "minItems": 1
+    },
+    "dry_run_patch": {
+      "type": "string",
+      "minLength": 1
+    },
+    "intended_paths": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "validation_commands": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "string"
+      }
+    },
+    "prepared_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "preparer_role": {
+      "type": "string",
+      "minLength": 1
+    },
+    "implementation_ticket": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 30
+    },
+    "prepared_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "compatibility_status": {
+      "const": "ready_for_separate_code_change_review"
+    },
+    "next_review_action": {
+      "const": "named_implementation_dry_run_review_required"
+    },
+    "repository_base_must_match": {
+      "const": true
+    },
+    "human_preparation_confirmed": {
+      "const": true
+    },
+    "implementation_dry_run_contract_version": {
+      "const": "interval-policy-implementation-dry-run-v1"
+    },
+    "implementation_authorized": {"const": false},
+    "implementation_applied": {"const": false},
+    "code_change_created": {"const": false},
+    "source_file_mutated": {"const": false},
+    "threshold_activation_authorized": {"const": false},
+    "active_policy_updated": {"const": false},
+    "candidate_thresholds_activated": {"const": false},
+    "source_disposition_mutated": {"const": false},
+    "source_package_mutated": {"const": false},
+    "source_decision_mutated": {"const": false},
+    "source_sensitivity_evidence_mutated": {"const": false},
+    "interval_recalibration_performed": {"const": false},
+    "model_change_performed": {"const": false},
+    "schedule_change_performed": {"const": false},
+    "promotion_change_performed": {"const": false},
+    "alert_delivery_performed": {"const": false},
+    "deployment_performed": {"const": false},
+    "external_publication_performed": {"const": false}
+  },
+  "additionalProperties": true
+}
