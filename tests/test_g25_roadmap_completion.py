@@ -131,10 +131,12 @@ def test_completed_g25_through_g34_artifacts_are_present_and_non_empty():
         assert path.read_bytes().strip(), relative
 
 
-def test_failed_g26_publish_markers_are_removed():
+def test_failed_publish_and_probe_artifacts_are_removed():
     for relative in (
         "G26_PUBLISH_MARKER.tmp",
         "NO.tmp",
         "THIS_SHOULD_NOT_EXIST.tmp",
+        "__probe_do_not_keep__",
+        "__probe_should_not_exist_2__",
     ):
         assert not (ROOT / relative).exists(), relative
