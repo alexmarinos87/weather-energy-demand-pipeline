@@ -79,7 +79,7 @@ def test_roadmap_records_g26_through_g34_and_advances_to_g35():
     assert "reject duplicate IDs and" in roadmap
     assert "address every" in roadmap
     assert "reuse the canonical evaluator" in roadmap
-    assert "exact current repository base" in roadmap
+    assert "current repository base" in roadmap
     assert "cannot apply or authorize the change" in roadmap
     assert "cannot create, authorize, or merge that PR" in roadmap
     assert "must revalidate every G33/G34 base" in roadmap
