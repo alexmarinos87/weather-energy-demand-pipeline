@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "interval_policy_dry_run_proposal_v1",
+  "type": "object",
+  "required": [
+    "proposal_id",
+    "proposal_revision",
+    "repository_full_name",
+    "repository_base_commit_sha",
+    "repository_base_tree_sha",
+    "active_policy_source_path",
+    "active_policy_source_sha256",
+    "source_disposition_id",
+    "source_disposition_sha256",
+    "revised_candidate_id",
+    "revised_candidate_version",
+    "active_policy_snapshot",
+    "proposed_policy_snapshot",
+    "changed_thresholds",
+    "changed_threshold_count",
+    "target_paths",
+    "validation_commands",
+    "proposed_by",
+    "proposer_role",
+    "proposal_ticket",
+    "rationale",
+    "proposed_at_utc",
+    "proposal_status",
+    "next_action",
+    "proposal_contract_version",
+    "proposal_sha256"
+  ],
+  "properties": {
+    "proposal_id": {
+      "type": "string",
+      "pattern": "^ipdp-[0-9a-f]{24}$"
+    },
+    "proposal_revision": {
+      "const": 1
+    },
+    "repository_base_commit_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "repository_base_tree_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "active_policy_source_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "changed_thresholds": {
+      "type": "array",
+      "minItems": 1
+    },
+    "changed_threshold_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "proposed_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "proposal_status": {
+      "const": "dry_run_compatible_for_separate_code_review"
+    },
+    "next_action": {
+      "const": "named_dry_run_proposal_review_required"
+    },
+    "proposal_contract_version": {
+      "const": "interval-policy-dry-run-proposal-v1"
+    },
+    "proposal_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "additionalProperties": true
+}
