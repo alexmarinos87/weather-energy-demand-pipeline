@@ -23,7 +23,7 @@ def test_g25_is_split_into_two_completed_dependency_layers():
     assert "Previous unsplit status before PRs #57–#58" in roadmap
 
 
-def test_roadmap_records_g26_through_g34_and_advances_to_g35():
+def test_roadmap_records_g26_through_g35b_and_advances_to_g36():
     roadmap = text("ROADMAP.md")
     assert (
         "G26 | Human-reviewed interval-monitoring policy sensitivity evidence "
@@ -72,8 +72,19 @@ def test_roadmap_records_g26_through_g34_and_advances_to_g35():
         in roadmap
     )
     assert (
-        "G35 | Separate reviewed code-change PR applying one accepted G34 dry "
-        "run after exact-base revalidation, with no runtime activation | Next"
+        "G35a | Explicit repository-base-bound code-change request over one "
+        "accepted G34 review without branch, PR, patch, or policy mutation | "
+        "Implemented locally"
+        in roadmap
+    )
+    assert (
+        "G35b | Immutable named review of one G35a request without authorizing "
+        "or creating the policy-defaults PR | Implemented locally"
+        in roadmap
+    )
+    assert (
+        "G36 | Separate reviewed policy-defaults PR applying one accepted G35b "
+        "request after exact-base revalidation, with no runtime activation | Next"
         in roadmap
     )
     assert "reject duplicate IDs and" in roadmap
@@ -82,10 +93,12 @@ def test_roadmap_records_g26_through_g34_and_advances_to_g35():
     assert "current repository base" in roadmap
     assert "cannot apply or authorize the change" in roadmap
     assert "cannot create, authorize, or merge that PR" in roadmap
-    assert "must revalidate every G33/G34 base" in roadmap
+    assert "without creating a branch, PR, or source edit" in roadmap
+    assert "cannot authorize, create, or merge that PR" in roadmap
+    assert "must revalidate every G33–G35 base" in roadmap
 
 
-def test_completed_g25_through_g34_artifacts_are_present_and_non_empty():
+def test_completed_g25_through_g35b_artifacts_are_present_and_non_empty():
     paths = [
         "forecasting/interval_health_trends.py",
         "forecasting/run_interval_health_trends.py",
@@ -124,6 +137,14 @@ def test_completed_g25_through_g34_artifacts_are_present_and_non_empty():
         "forecasting/run_interval_policy_implementation_dry_run_review.py",
         "data-contracts/interval_policy_implementation_dry_run_review_schema.json",
         "INTERVAL_POLICY_IMPLEMENTATION_DRY_RUN_REVIEW.md",
+        "forecasting/interval_policy_code_change_request.py",
+        "forecasting/run_interval_policy_code_change_request.py",
+        "data-contracts/interval_policy_code_change_request_schema.json",
+        "INTERVAL_POLICY_CODE_CHANGE_REQUEST.md",
+        "forecasting/interval_policy_code_change_request_review.py",
+        "forecasting/run_interval_policy_code_change_request_review.py",
+        "data-contracts/interval_policy_code_change_request_review_schema.json",
+        "INTERVAL_POLICY_CODE_CHANGE_REQUEST_REVIEW.md",
     ]
     for relative in paths:
         path = ROOT / relative
