@@ -7,7 +7,7 @@ health evidence. It monitors freshness, causal calibration history, empirical
 coverage, and interval width without recalibrating a radius, refitting or
 changing a model, activating a schedule, or promoting anything.
 
-The same advisory contract now exists in two deliberately separate runtimes:
+The same advisory contract exists in two deliberately separate runtimes:
 
 - the local pandas CLI over CSV/Parquet evidence; and
 - an optional/manual Microsoft Fabric subflow over retained Delta metrics.
@@ -51,8 +51,13 @@ recent interval runs >= 2
 latest interval-run age <= 10,080 minutes
 latest evaluation age <= 20,160 minutes
 minimum recent causal calibration rows >= 24
-recent empirical coverage shortfall <= 5 percentage points
+recent empirical coverage shortfall <= 3 percentage points
 ```
+
+The reviewed G36/G37 policy-default change narrows this last hard limit from five
+to three percentage points in both the local and optional/manual Fabric
+implementations. It changes checked-in defaults only; it does not rewrite any
+previously retained monitoring result.
 
 Recent empirical coverage is weighted by each run's retained evaluation row
 count. Coverage shortfall is:
