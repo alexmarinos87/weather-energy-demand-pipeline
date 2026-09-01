@@ -14,6 +14,22 @@ A contract-first Microsoft Fabric data product that combines weather and electri
 | Operations | Source reconciliation, provider health and drift evidence, immutable manifests and recovery controls |
 | Governance | Human-reviewed candidate records, bounded pilot contracts and no silent scheduling, activation or promotion |
 
+## One-command credential-free demo
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install \
+  -r requirements.txt \
+  -c constraints/ci-python311-linux.txt
+
+python -m forecasting.run_portfolio_demo \
+  --output-root data/portfolio-demo \
+  --output-format csv
+```
+
+The demo uses deterministic local inputs, performs no live provider request, changes no Fabric workspace and writes an immutable evidence bundle for all four configured source areas. Its `portfolio_demo_manifest.json` records artifact hashes, row counts, contract identities and no-side-effect flags.
+
 ## Architecture
 
 ```text
@@ -42,23 +58,7 @@ human review and bounded pilot records
 - Prediction intervals use calibration evidence only; retained test labels do not choose the interval radius.
 - Generated evidence can inform a review but cannot silently deploy a workspace, schedule a pipeline, promote a model or authorize a pilot.
 
-## Run the credential-free product demo
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install \
-  -r requirements.txt \
-  -c constraints/ci-python311-linux.txt
-
-python -m forecasting.run_portfolio_demo \
-  --output-root data/portfolio-demo \
-  --output-format csv
-```
-
-The demo uses deterministic local inputs, performs no live provider request, changes no Fabric workspace and writes an immutable evidence bundle for all four configured source areas.
-
-## Explore the evidence
+## Capability index
 
 | Topic | Starting point |
 | --- | --- |
