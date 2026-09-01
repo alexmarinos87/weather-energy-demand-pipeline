@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "alert_delivery_performed": {"const": false},
+    "artifacts": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "filename": {"minLength": 1, "type": "string"},
+          "role": {"enum": ["slices", "summary", "report"]},
+          "sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
+        },
+        "required": ["role", "filename", "sha256"],
+        "type": "object"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    },
+    "compatibility_contract_version": {
+      "const": "interval-policy-retained-compatibility-v1"
+    },
+    "compatibility_run_id": {
+      "pattern": "^ipca-[0-9a-f]{24}$",
+      "type": "string"
+    },
+    "compatibility_run_timestamp_utc": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "compatibility_summary_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "current_policy": {
+      "additionalProperties": true,
+      "properties": {
+        "candidate_id": {"const": "reviewed-three-point"},
+        "candidate_role": {"const": "active_reference"},
+        "max_recent_coverage_shortfall_pct_points": {"const": 3.0}
+      },
+      "required": [
+        "candidate_id",
+        "candidate_role",
+        "candidate_version",
+        "max_recent_coverage_shortfall_pct_points",
+        "source_policy_version"
+      ],
+      "type": "object"
+    },
+    "deployment_performed": {"const": false},
+    "external_publication_performed": {"const": false},
+    "fabric_execution_performed": {"const": false},
+    "historical_statuses_rewritten": {"const": false},
+    "interval_recalibration_performed": {"const": false},
+    "manifest_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "model_change_performed": {"const": false},
+    "monitoring_rerun_performed": {"const": false},
+    "previous_policy": {
+      "additionalProperties": true,
+      "properties": {
+        "candidate_id": {"const": "previous-five-point"},
+        "candidate_role": {"const": "review_candidate"},
+        "max_recent_coverage_shortfall_pct_points": {"const": 5.0}
+      },
+      "required": [
+        "candidate_id",
+        "candidate_role",
+        "candidate_version",
+        "max_recent_coverage_shortfall_pct_points",
+        "source_policy_version"
+      ],
+      "type": "object"
+    },
+    "promotion_change_performed": {"const": false},
+    "retained_evidence_mutated": {"const": false},
+    "schedule_change_performed": {"const": false},
+    "threshold_activation_performed": {"const": false},
+    "trend_run_id": {"minLength": 1, "type": "string"}
+  },
+  "required": [
+    "compatibility_run_id",
+    "compatibility_run_timestamp_utc",
+    "trend_run_id",
+    "compatibility_summary_sha256",
+    "previous_policy",
+    "current_policy",
+    "artifacts",
+    "compatibility_contract_version",
+    "historical_statuses_rewritten",
+    "retained_evidence_mutated",
+    "monitoring_rerun_performed",
+    "threshold_activation_performed",
+    "interval_recalibration_performed",
+    "model_change_performed",
+    "fabric_execution_performed",
+    "schedule_change_performed",
+    "promotion_change_performed",
+    "alert_delivery_performed",
+    "deployment_performed",
+    "external_publication_performed",
+    "manifest_sha256"
+  ],
+  "title": "interval-policy-retained-compatibility-v1 manifest",
+  "type": "object"
+}
