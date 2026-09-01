@@ -36,7 +36,7 @@ def source_text() -> str:
 
 def revised_candidate() -> dict:
     values = active_policy_snapshot()
-    values["max_recent_coverage_shortfall_pct_points"] = 3.0
+    values["max_recent_coverage_shortfall_pct_points"] = 2.0
     return {
         "candidate_id": "revised-candidate-r3",
         "candidate_role": "review_candidate",
@@ -149,16 +149,16 @@ def test_dry_run_is_base_bound_exact_and_non_applying():
     assert proposal["active_to_proposed_changes"] == [
         {
             "field": "max_recent_coverage_shortfall_pct_points",
-            "current_value": 5.0,
-            "proposed_value": 3.0,
+            "current_value": 3.0,
+            "proposed_value": 2.0,
         }
     ]
     assert (
-        "-    max_recent_coverage_shortfall_pct_points: float = 5.0"
+        "-    max_recent_coverage_shortfall_pct_points: float = 3.0"
         in proposal["dry_run_patch"]
     )
     assert (
-        "+    max_recent_coverage_shortfall_pct_points: float = 3.0"
+        "+    max_recent_coverage_shortfall_pct_points: float = 2.0"
         in proposal["dry_run_patch"]
     )
     assert all(
@@ -211,7 +211,7 @@ def test_source_or_proposal_tampering_is_rejected():
     with pytest.raises(IntervalPolicyImplementationDryRunError, match="defaults"):
         create(
             policy_source_text=source_text().replace(
-                "max_recent_coverage_shortfall_pct_points: float = 5.0",
+                "max_recent_coverage_shortfall_pct_points: float = 3.0",
                 "max_recent_coverage_shortfall_pct_points: float = 4.0",
             )
         )

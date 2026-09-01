@@ -134,6 +134,40 @@ def test_recent_coverage_shortfall_is_an_error():
     assert "maximum_recent_coverage_shortfall_pct_points" in failed
 
 
+def test_reviewed_default_coverage_shortfall_limit_is_three_points():
+    config = PredictionIntervalMonitoringConfig()
+    assert config.max_recent_coverage_shortfall_pct_points == 3.0
+
+    boundary_checks, boundary_summary = monitor(
+        metrics=interval_metrics(
+            recent_coverage=87.0,
+            reference_coverage=87.0,
+        )
+    )
+    boundary = boundary_checks.loc[
+        boundary_checks["check_name"]
+        == "maximum_recent_coverage_shortfall_pct_points"
+    ].iloc[0]
+    assert boundary["threshold_value"] == 3.0
+    assert boundary["observed_value"] == pytest.approx(3.0)
+    assert boundary["passed"]
+    assert boundary_summary.loc[0, "monitor_status"] == HEALTHY_STATUS
+
+    failed_checks, failed_summary = monitor(
+        metrics=interval_metrics(
+            recent_coverage=86.5,
+            reference_coverage=86.5,
+        )
+    )
+    failed = failed_checks.loc[
+        failed_checks["check_name"]
+        == "maximum_recent_coverage_shortfall_pct_points"
+    ].iloc[0]
+    assert failed["observed_value"] == pytest.approx(3.5)
+    assert not failed["passed"]
+    assert failed_summary.loc[0, "monitor_status"] == FAILED_STATUS
+
+
 def test_insufficient_recent_calibration_history_is_an_error():
     checks, summary = monitor(metrics=interval_metrics(recent_calibration=20))
     failed = set(checks.loc[~checks["passed"], "check_name"])
