@@ -52,7 +52,9 @@ checks pass.
 | G34 | Immutable named review of one G33 dry run without code-change authorization or creation | Implemented locally |
 | G35a | Explicit repository-base-bound code-change request over one accepted G34 review without branch, PR, patch, or policy mutation | Implemented locally |
 | G35b | Immutable named review of one G35a request without authorizing or creating the policy-defaults PR | Implemented locally |
-| G36 | Separate reviewed policy-defaults PR applying one accepted G35b request after exact-base revalidation, with no runtime activation | Next |
+| G36 | Reviewed local monitoring-policy default change from five to three recent coverage-shortfall percentage points after exact-base revalidation | Implemented locally |
+| G37 | Optional/manual Fabric parity for the reviewed three-point recent coverage-shortfall default with exact local/Fabric regression protection | Implemented as an optional manual subflow |
+| G38 | Retained-evidence compatibility assessment comparing the previous five-point and reviewed three-point policy outcomes without rewriting historical statuses | Next |
 
 Previous unsplit status before PRs #57–#58:
 
@@ -66,17 +68,20 @@ G25b in the table.
 
 ## Product-quality sequence
 
-The next product-quality work should create one separate G36 policy-defaults PR
-only when a retained G35b review records
-`accept_for_separate_policy_defaults_pr`. Before applying the reviewed patch,
-that PR must revalidate the current repository base, policy source blob, active
-defaults, proposed-policy digest, intended paths, and validation commands.
-G35a and G35b remain evidence layers only: they do not create a feature branch,
-pull request, patch application, or policy mutation. G36 must keep ordinary
-scheduling, alert delivery, Fabric execution, model selection, deployment, and
-external publication out of scope. Merging the source change updates checked-in
-defaults only; it must not claim that the revised policy has been operationally
-activated against any live schedule or production evidence.
+G36 applied the exact reviewed local default change and G37 aligned the
+optional/manual Fabric implementation to the same three-point hard limit. These
+merges changed checked-in defaults only. They did not rerun monitoring, rewrite
+historical monitoring statuses, execute Fabric, activate a schedule, deliver an
+alert, recalibrate an interval, select a model, deploy, or publish externally.
+
+The next product-quality layer should create one G38 retained-evidence
+compatibility assessment over immutable interval-metric history. It should
+compare the previous five-point policy and the reviewed three-point policy on
+the same exact area/resource/city/horizon/model/coverage slices, report status
+changes and unchanged conclusions, and preserve the original retained health
+rows as authoritative historical evidence. G38 must not operationally activate
+any schedule or policy, rewrite historical statuses, or perform automatic
+remediation.
 
 ## Dependency rules
 
@@ -216,6 +221,12 @@ activated against any live schedule or production evidence.
 - A G36 policy-defaults PR must revalidate every G33–G35 base and source binding
   against its own current base before applying the reviewed diff, and the merge
   must not imply operational policy activation.
+- G37 Fabric parity must remain an optional/manual source change, preserve the
+  same policy and monitoring contract versions, and must not execute Fabric or
+  activate a pipeline trigger merely because defaults match.
+- A G38 compatibility assessment must evaluate the old and new defaults against
+  the same retained slices, report exact status deltas, and leave all historical
+  health rows and authority fields unchanged.
 
 ## Reusable PR workflow
 
