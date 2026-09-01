@@ -48,7 +48,7 @@ class PredictionIntervalMonitoringConfig:
     max_interval_run_age_minutes: int = 10080
     max_evaluation_age_minutes: int = 20160
     min_calibration_observation_count: int = 24
-    max_recent_coverage_shortfall_pct_points: float = 5.0
+    max_recent_coverage_shortfall_pct_points: float = 3.0
     max_coverage_drop_pct_points: float = 5.0
     max_average_interval_width_increase_pct: float = 25.0
     max_calibration_history_drop_pct: float = 25.0
