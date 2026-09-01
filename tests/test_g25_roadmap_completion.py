@@ -25,6 +25,7 @@ def test_g25_is_split_into_two_completed_dependency_layers():
 
 def test_roadmap_records_g26_through_g35b_and_advances_to_g36():
     roadmap = text("ROADMAP.md")
+    normalized_roadmap = " ".join(roadmap.split())
     assert (
         "G26 | Human-reviewed interval-monitoring policy sensitivity evidence "
         "without automatic threshold, interval, model, schedule, or promotion "
@@ -94,7 +95,7 @@ def test_roadmap_records_g26_through_g35b_and_advances_to_g36():
     assert "cannot apply or authorize the change" in roadmap
     assert "cannot create, authorize, or merge that PR" in roadmap
     assert "without creating a branch, PR, or source edit" in roadmap
-    assert "cannot authorize, create, or merge that PR" in roadmap
+    assert "cannot authorize, create, or merge that PR" in normalized_roadmap
     assert "must revalidate every G33–G35 base" in roadmap
 
 
