@@ -1,0 +1,296 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "interval-policy-code-change-request-v1",
+  "type": "object",
+  "required": [
+    "code_change_request_id",
+    "code_change_request_revision",
+    "source_implementation_dry_run_review_id",
+    "source_implementation_dry_run_review_sha256",
+    "source_implementation_dry_run_id",
+    "source_implementation_dry_run_sha256",
+    "source_disposition_id",
+    "source_disposition_sha256",
+    "reviewed_repository_base_commit",
+    "reviewed_repository_base_tree",
+    "current_repository_commit",
+    "current_repository_tree",
+    "policy_source_path",
+    "current_policy_source_sha256",
+    "current_policy_source_git_blob_sha1",
+    "active_policy_sha256",
+    "proposed_policy_sha256",
+    "revised_candidate_id",
+    "revised_candidate_version",
+    "changed_threshold_fields",
+    "changed_threshold_count",
+    "changed_threshold_digest",
+    "reviewed_patch_sha256",
+    "intended_paths",
+    "validation_commands",
+    "requested_branch_name",
+    "requested_pr_title",
+    "requested_by",
+    "requester_role",
+    "request_ticket",
+    "rationale",
+    "requested_at_utc",
+    "request_status",
+    "next_action",
+    "exact_current_base_required",
+    "human_request_confirmed",
+    "code_change_authorized",
+    "code_change_created",
+    "branch_created",
+    "pull_request_created",
+    "implementation_authorized",
+    "implementation_applied",
+    "patch_applied",
+    "source_file_mutated",
+    "threshold_activation_authorized",
+    "active_policy_updated",
+    "candidate_thresholds_activated",
+    "source_review_mutated",
+    "source_proposal_mutated",
+    "source_disposition_mutated",
+    "retained_evidence_mutated",
+    "interval_recalibration_performed",
+    "model_change_performed",
+    "schedule_change_performed",
+    "promotion_change_performed",
+    "alert_delivery_performed",
+    "deployment_performed",
+    "external_publication_performed",
+    "code_change_request_contract_version",
+    "code_change_request_sha256"
+  ],
+  "properties": {
+    "code_change_request_id": {
+      "type": "string",
+      "pattern": "^ipccr-[0-9a-f]{24}$"
+    },
+    "code_change_request_revision": {
+      "const": 1
+    },
+    "source_implementation_dry_run_review_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_implementation_dry_run_review_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_implementation_dry_run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_implementation_dry_run_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_disposition_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_disposition_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "reviewed_repository_base_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "reviewed_repository_base_tree": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "current_repository_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "current_repository_tree": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "policy_source_path": {
+      "const": "forecasting/interval_monitoring.py"
+    },
+    "current_policy_source_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "current_policy_source_git_blob_sha1": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "active_policy_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "proposed_policy_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "revised_candidate_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "revised_candidate_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "changed_threshold_fields": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "changed_threshold_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "changed_threshold_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "reviewed_patch_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "intended_paths": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 3
+      }
+    },
+    "validation_commands": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 8
+      }
+    },
+    "requested_branch_name": {
+      "type": "string",
+      "minLength": 3
+    },
+    "requested_pr_title": {
+      "type": "string",
+      "minLength": 10
+    },
+    "requested_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "requester_role": {
+      "type": "string",
+      "minLength": 1
+    },
+    "request_ticket": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 30
+    },
+    "requested_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "request_status": {
+      "const": "ready_for_named_code_change_request_review"
+    },
+    "next_action": {
+      "const": "named_code_change_request_review_required"
+    },
+    "exact_current_base_required": {
+      "const": true
+    },
+    "human_request_confirmed": {
+      "const": true
+    },
+    "code_change_request_contract_version": {
+      "const": "interval-policy-code-change-request-v1"
+    },
+    "code_change_request_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "code_change_authorized": {
+      "const": false
+    },
+    "code_change_created": {
+      "const": false
+    },
+    "branch_created": {
+      "const": false
+    },
+    "pull_request_created": {
+      "const": false
+    },
+    "implementation_authorized": {
+      "const": false
+    },
+    "implementation_applied": {
+      "const": false
+    },
+    "patch_applied": {
+      "const": false
+    },
+    "source_file_mutated": {
+      "const": false
+    },
+    "threshold_activation_authorized": {
+      "const": false
+    },
+    "active_policy_updated": {
+      "const": false
+    },
+    "candidate_thresholds_activated": {
+      "const": false
+    },
+    "source_review_mutated": {
+      "const": false
+    },
+    "source_proposal_mutated": {
+      "const": false
+    },
+    "source_disposition_mutated": {
+      "const": false
+    },
+    "retained_evidence_mutated": {
+      "const": false
+    },
+    "interval_recalibration_performed": {
+      "const": false
+    },
+    "model_change_performed": {
+      "const": false
+    },
+    "schedule_change_performed": {
+      "const": false
+    },
+    "promotion_change_performed": {
+      "const": false
+    },
+    "alert_delivery_performed": {
+      "const": false
+    },
+    "deployment_performed": {
+      "const": false
+    },
+    "external_publication_performed": {
+      "const": false
+    }
+  },
+  "additionalProperties": true
+}
