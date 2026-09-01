@@ -50,7 +50,9 @@ checks pass.
 | G32 | Immutable named human disposition over one G31 result without active-policy mutation | Implemented locally |
 | G33 | Repository-base-bound dry-run implementation proposal over a suitable G32 disposition without code application | Implemented locally |
 | G34 | Immutable named review of one G33 dry run without code-change authorization or creation | Implemented locally |
-| G35 | Separate reviewed code-change PR applying one accepted G34 dry run after exact-base revalidation, with no runtime activation | Next |
+| G35a | Explicit repository-base-bound code-change request over one accepted G34 review without branch, PR, patch, or policy mutation | Implemented locally |
+| G35b | Immutable named review of one G35a request without authorizing or creating the policy-defaults PR | Implemented locally |
+| G36 | Separate reviewed policy-defaults PR applying one accepted G35b request after exact-base revalidation, with no runtime activation | Next |
 
 Previous unsplit status before PRs #57–#58:
 
@@ -64,15 +66,17 @@ G25b in the table.
 
 ## Product-quality sequence
 
-The next product-quality work should create one separate G35 code-change PR only
-when a retained G34 review records `accept_for_separate_code_change_pr`. Before
-applying the accepted patch, that PR must revalidate the current repository base,
-policy source blob, active defaults, proposed-policy digest, intended paths, and
-validation commands. It must keep ordinary scheduling, alert delivery, Fabric
-execution, model selection, deployment, and external publication out of scope.
-Merging the code change updates checked-in defaults only; it must not claim that
-the revised policy has been operationally activated against any live schedule or
-production evidence.
+The next product-quality work should create one separate G36 policy-defaults PR
+only when a retained G35b review records
+`accept_for_separate_policy_defaults_pr`. Before applying the reviewed patch,
+that PR must revalidate the current repository base, policy source blob, active
+defaults, proposed-policy digest, intended paths, and validation commands.
+G35a and G35b remain evidence layers only: they do not create a feature branch,
+pull request, patch application, or policy mutation. G36 must keep ordinary
+scheduling, alert delivery, Fabric execution, model selection, deployment, and
+external publication out of scope. Merging the source change updates checked-in
+defaults only; it must not claim that the revised policy has been operationally
+activated against any live schedule or production evidence.
 
 ## Dependency rules
 
@@ -204,7 +208,12 @@ production evidence.
   and validation plan but cannot apply or authorize the change.
 - A G34 review must independently reopen the G33 evidence and may accept it only
   for a separate code-change PR; it cannot create, authorize, or merge that PR.
-- A G35 code-change PR must revalidate every G33/G34 base and source binding
+- A G35a code-change request must bind one accepted G34 review to the exact
+  current repository base, source blob, proposed-policy digest, intended paths,
+  and validation commands without creating a branch, PR, or source edit.
+- A G35b review may mark the request eligible for a separate G36 PR but cannot
+  authorize, create, or merge that PR or activate the policy.
+- A G36 policy-defaults PR must revalidate every G33–G35 base and source binding
   against its own current base before applying the reviewed diff, and the merge
   must not imply operational policy activation.
 
