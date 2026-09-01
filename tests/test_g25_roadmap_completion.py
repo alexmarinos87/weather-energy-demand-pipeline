@@ -23,7 +23,7 @@ def test_g25_is_split_into_two_completed_dependency_layers():
     assert "Previous unsplit status before PRs #57–#58" in roadmap
 
 
-def test_roadmap_records_g26_through_g35b_and_advances_to_g36():
+def test_roadmap_records_g26_through_g37_and_advances_to_g38():
     roadmap = text("ROADMAP.md")
     normalized_roadmap = " ".join(roadmap.split())
     assert (
@@ -84,8 +84,21 @@ def test_roadmap_records_g26_through_g35b_and_advances_to_g36():
         in roadmap
     )
     assert (
-        "G36 | Separate reviewed policy-defaults PR applying one accepted G35b "
-        "request after exact-base revalidation, with no runtime activation | Next"
+        "G36 | Reviewed local monitoring-policy default change from five to "
+        "three recent coverage-shortfall percentage points after exact-base "
+        "revalidation | Implemented locally"
+        in roadmap
+    )
+    assert (
+        "G37 | Optional/manual Fabric parity for the reviewed three-point recent "
+        "coverage-shortfall default with exact local/Fabric regression protection "
+        "| Implemented as an optional manual subflow"
+        in roadmap
+    )
+    assert (
+        "G38 | Retained-evidence compatibility assessment comparing the previous "
+        "five-point and reviewed three-point policy outcomes without rewriting "
+        "historical statuses | Next"
         in roadmap
     )
     assert "reject duplicate IDs and" in roadmap
@@ -97,6 +110,9 @@ def test_roadmap_records_g26_through_g35b_and_advances_to_g36():
     assert "without creating a branch, PR, or source edit" in roadmap
     assert "cannot authorize, create, or merge that PR" in normalized_roadmap
     assert "must revalidate every G33–G35 base" in roadmap
+    assert "did not rerun monitoring" in normalized_roadmap
+    assert "must not operationally activate" in normalized_roadmap
+    assert "leave all historical health rows" in normalized_roadmap
 
 
 def test_completed_g25_through_g35b_artifacts_are_present_and_non_empty():
@@ -146,6 +162,8 @@ def test_completed_g25_through_g35b_artifacts_are_present_and_non_empty():
         "forecasting/run_interval_policy_code_change_request_review.py",
         "data-contracts/interval_policy_code_change_request_review_schema.json",
         "INTERVAL_POLICY_CODE_CHANGE_REQUEST_REVIEW.md",
+        "fabric/notebooks/05f_prediction_interval_monitoring.py",
+        "INTERVAL_MONITORING.md",
     ]
     for relative in paths:
         path = ROOT / relative
