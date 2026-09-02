@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "alert_delivery_performed": {"const": false},
+    "annotation_count": {"minimum": 1, "type": "integer"},
+    "annotation_storage_updated": {"const": false},
+    "annotations": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "annotation_id": {
+            "pattern": "^[a-z][a-z0-9_-]{2,63}$",
+            "type": "string"
+          },
+          "annotation_text": {"minLength": 20, "type": "string"},
+          "justification": {"minLength": 20, "type": "string"},
+          "scenario": {"type": ["string", "null"]},
+          "scope": {"enum": ["compatibility_run", "scenario"]}
+        },
+        "required": [
+          "annotation_id",
+          "scope",
+          "scenario",
+          "annotation_text",
+          "justification"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "compatibility_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "compatibility_run_id": {
+      "pattern": "^ipca-[0-9a-f]{24}$",
+      "type": "string"
+    },
+    "compatibility_summary_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "current_policy_id": {"const": "reviewed-three-point"},
+    "current_shortfall_threshold_pct_points": {"const": 3.0},
+    "deployment_performed": {"const": false},
+    "external_publication_performed": {"const": false},
+    "fabric_execution_performed": {"const": false},
+    "follow_up_human_review_required": {"const": true},
+    "historical_annotation_applied": {"const": false},
+    "historical_statuses_rewritten": {"const": false},
+    "interval_recalibration_performed": {"const": false},
+    "model_change_performed": {"const": false},
+    "monitoring_rerun_performed": {"const": false},
+    "named_human_proposal_confirmed": {"const": true},
+    "next_action": {
+      "const": "named_historical_annotation_proposal_review_required"
+    },
+    "policy_version_updated": {"const": false},
+    "previous_policy_id": {"const": "previous-five-point"},
+    "previous_shortfall_threshold_pct_points": {"const": 5.0},
+    "promotion_change_performed": {"const": false},
+    "proposal_contract_version": {
+      "const": "interval-policy-historical-annotation-proposal-v1"
+    },
+    "proposal_id": {
+      "pattern": "^iphap-[0-9a-f]{24}$",
+      "type": "string"
+    },
+    "proposal_revision": {"const": 1},
+    "proposal_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "proposal_ticket": {"minLength": 1, "type": "string"},
+    "proposed_at_utc": {"format": "date-time", "type": "string"},
+    "proposed_by": {"minLength": 1, "type": "string"},
+    "proposer_role": {"minLength": 1, "type": "string"},
+    "rationale": {"minLength": 20, "type": "string"},
+    "requested_action_responses": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "annotation_ids": {
+            "items": {"minLength": 3, "type": "string"},
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "requested_action": {"minLength": 10, "type": "string"},
+          "response": {"minLength": 20, "type": "string"}
+        },
+        "required": ["requested_action", "response", "annotation_ids"],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "requested_actions": {
+      "items": {"minLength": 10, "type": "string"},
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "retained_evidence_mutated": {"const": false},
+    "schedule_change_performed": {"const": false},
+    "source_compatibility_evidence_mutated": {"const": false},
+    "source_review_id": {
+      "pattern": "^ipcr-[0-9a-f]{24}$",
+      "type": "string"
+    },
+    "source_review_mutated": {"const": false},
+    "source_review_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "threshold_activation_performed": {"const": false},
+    "trend_run_id": {"minLength": 1, "type": "string"}
+  },
+  "required": [
+    "proposal_id",
+    "proposal_revision",
+    "source_review_id",
+    "source_review_sha256",
+    "compatibility_run_id",
+    "trend_run_id",
+    "compatibility_summary_sha256",
+    "compatibility_manifest_sha256",
+    "previous_policy_id",
+    "previous_shortfall_threshold_pct_points",
+    "current_policy_id",
+    "current_shortfall_threshold_pct_points",
+    "requested_actions",
+    "requested_action_responses",
+    "annotations",
+    "annotation_count",
+    "proposed_by",
+    "proposer_role",
+    "proposal_ticket",
+    "rationale",
+    "proposed_at_utc",
+    "named_human_proposal_confirmed",
+    "follow_up_human_review_required",
+    "next_action",
+    "historical_statuses_rewritten",
+    "historical_annotation_applied",
+    "annotation_storage_updated",
+    "source_review_mutated",
+    "source_compatibility_evidence_mutated",
+    "retained_evidence_mutated",
+    "monitoring_rerun_performed",
+    "policy_version_updated",
+    "threshold_activation_performed",
+    "interval_recalibration_performed",
+    "model_change_performed",
+    "fabric_execution_performed",
+    "schedule_change_performed",
+    "promotion_change_performed",
+    "alert_delivery_performed",
+    "deployment_performed",
+    "external_publication_performed",
+    "proposal_contract_version",
+    "proposal_sha256"
+  ],
+  "title": "interval-policy-historical-annotation-proposal-v1",
+  "type": "object"
+}
