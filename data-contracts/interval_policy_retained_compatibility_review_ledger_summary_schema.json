@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accepted_transition_count": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "alert_delivery_performed": {
+      "const": false
+    },
+    "compatibility_reassessment_request_count": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "compatibility_run_count": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "conflict_count": {
+      "const": 0
+    },
+    "deployment_performed": {
+      "const": false
+    },
+    "earliest_reviewed_at_utc": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "external_publication_performed": {
+      "const": false
+    },
+    "fabric_execution_performed": {
+      "const": false
+    },
+    "follow_up_review_count": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "historical_annotation_applied": {
+      "const": false
+    },
+    "historical_annotation_request_count": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "historical_statuses_rewritten": {
+      "const": false
+    },
+    "human_review_required": {
+      "type": "boolean"
+    },
+    "interval_recalibration_performed": {
+      "const": false
+    },
+    "latest_reviewed_at_utc": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "ledger_contract_version": {
+      "const": "interval-policy-retained-compatibility-review-ledger-v1"
+    },
+    "ledger_run_id": {
+      "pattern": "^ipcrl-[0-9a-f]{24}$",
+      "type": "string"
+    },
+    "ledger_run_timestamp_utc": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "ledger_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "model_change_performed": {
+      "const": false
+    },
+    "monitoring_rerun_performed": {
+      "const": false
+    },
+    "policy_version_updated": {
+      "const": false
+    },
+    "promotion_change_performed": {
+      "const": false
+    },
+    "retained_evidence_mutated": {
+      "const": false
+    },
+    "review_count": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "schedule_change_performed": {
+      "const": false
+    },
+    "source_compatibility_evidence_mutated": {
+      "const": false
+    },
+    "source_reviews_mutated": {
+      "const": false
+    },
+    "threshold_activation_performed": {
+      "const": false
+    }
+  },
+  "required": [
+    "ledger_run_id",
+    "ledger_run_timestamp_utc",
+    "review_count",
+    "compatibility_run_count",
+    "accepted_transition_count",
+    "historical_annotation_request_count",
+    "compatibility_reassessment_request_count",
+    "follow_up_review_count",
+    "earliest_reviewed_at_utc",
+    "latest_reviewed_at_utc",
+    "conflict_count",
+    "human_review_required",
+    "ledger_sha256",
+    "ledger_contract_version",
+    "source_reviews_mutated",
+    "source_compatibility_evidence_mutated",
+    "historical_statuses_rewritten",
+    "historical_annotation_applied",
+    "retained_evidence_mutated",
+    "monitoring_rerun_performed",
+    "policy_version_updated",
+    "threshold_activation_performed",
+    "interval_recalibration_performed",
+    "model_change_performed",
+    "fabric_execution_performed",
+    "schedule_change_performed",
+    "promotion_change_performed",
+    "alert_delivery_performed",
+    "deployment_performed",
+    "external_publication_performed"
+  ],
+  "title": "interval-policy-retained-compatibility-review-ledger-summary-v1",
+  "type": "object"
+}
