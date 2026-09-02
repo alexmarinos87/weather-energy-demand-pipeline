@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "interval_policy_compatibility_manifest_v1",
+  "type": "object",
+  "required": [
+    "manifest_version",
+    "assessment_run_id",
+    "assessment_timestamp_utc",
+    "source_health_checks_sha256",
+    "legacy_threshold_pct_points",
+    "current_threshold_pct_points",
+    "artifacts",
+    "compatibility_contract_version",
+    "manifest_sha256",
+    "historical_health_rows_rewritten",
+    "historical_statuses_rewritten",
+    "retained_evidence_mutated",
+    "automatic_remediation_performed",
+    "interval_recalibration_performed",
+    "model_change_performed",
+    "fabric_execution_performed",
+    "schedule_change_performed",
+    "alert_delivery_performed",
+    "promotion_change_performed",
+    "deployment_performed",
+    "external_publication_performed"
+  ],
+  "properties": {
+    "manifest_version": {"const": "interval-policy-compatibility-manifest-v1"},
+    "assessment_run_id": {"type": "string", "minLength": 1},
+    "assessment_timestamp_utc": {"type": "string", "format": "date-time"},
+    "source_health_checks_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "legacy_threshold_pct_points": {"const": 5.0},
+    "current_threshold_pct_points": {"const": 3.0},
+    "artifacts": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["role", "relative_path", "content_type", "byte_count", "sha256", "row_count"],
+        "properties": {
+          "role": {"enum": ["slices", "summary", "report"]},
+          "relative_path": {"type": "string", "minLength": 1},
+          "content_type": {"enum": ["text/csv", "application/x-parquet", "text/markdown"]},
+          "byte_count": {"type": "integer", "minimum": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "row_count": {"type": ["integer", "null"], "minimum": 0}
+        },
+        "additionalProperties": false
+      }
+    },
+    "compatibility_contract_version": {"const": "interval-policy-compatibility-v1"},
+    "manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "historical_health_rows_rewritten": {"const": false},
+    "historical_statuses_rewritten": {"const": false},
+    "retained_evidence_mutated": {"const": false},
+    "automatic_remediation_performed": {"const": false},
+    "interval_recalibration_performed": {"const": false},
+    "model_change_performed": {"const": false},
+    "fabric_execution_performed": {"const": false},
+    "schedule_change_performed": {"const": false},
+    "alert_delivery_performed": {"const": false},
+    "promotion_change_performed": {"const": false},
+    "deployment_performed": {"const": false},
+    "external_publication_performed": {"const": false}
+  },
+  "additionalProperties": false
+}
