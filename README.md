@@ -62,6 +62,7 @@ human review and bounded pilot records
 
 | Topic | Starting point |
 | --- | --- |
+| Recruiter-facing case study | [`PORTFOLIO_CASE_STUDY.md`](PORTFOLIO_CASE_STUDY.md) |
 | Credential-free portfolio demo | [`PORTFOLIO_DEMO.md`](PORTFOLIO_DEMO.md) |
 | Source and transformation flow | [`architecture/data_flow.md`](architecture/data_flow.md) |
 | Forecast-weather contract | [`FORECAST_WEATHER.md`](FORECAST_WEATHER.md) |
