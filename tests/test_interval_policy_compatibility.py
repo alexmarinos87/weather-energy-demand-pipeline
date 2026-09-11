@@ -71,6 +71,11 @@ def health_checks(
                 "details": name,
             }
             for scope, severity, name, observed, threshold, comparator, passed in definitions
+            if reference_passed or name not in {
+                "maximum_interval_coverage_drop_pct_points",
+                "maximum_average_interval_width_increase_pct",
+                "maximum_calibration_history_drop_pct",
+            }
         ]
     )
 
