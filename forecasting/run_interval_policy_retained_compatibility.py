@@ -5,7 +5,7 @@ from pathlib import Path
 
 from forecasting.interval_policy_retained_compatibility import evaluate_retained_policy_compatibility
 from forecasting.interval_policy_compatibility_publication import write_retained_compatibility_bundle
-from forecasting.interval_policy_sensitivity import read_frame
+from forecasting.interval_policy_compatibility_io import read_compatibility_frame as read_frame
 
 
 def build_parser() -> argparse.ArgumentParser:
