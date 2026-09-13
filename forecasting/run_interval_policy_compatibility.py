@@ -10,14 +10,11 @@ from forecasting.interval_policy_compatibility import (
     assess_retained_policy_compatibility,
     write_compatibility_assessment,
 )
+from forecasting.interval_policy_compatibility_io import read_compatibility_frame
 
 
 def _read(path: Path) -> pd.DataFrame:
-    if path.suffix.casefold() == ".csv":
-        return pd.read_csv(path)
-    if path.suffix.casefold() in {".parquet", ".pq"}:
-        return pd.read_parquet(path)
-    raise ValueError("Health-check input must be CSV or Parquet.")
+    return read_compatibility_frame(path)
 
 
 def parser() -> argparse.ArgumentParser:
