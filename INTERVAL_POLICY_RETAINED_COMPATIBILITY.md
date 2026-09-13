@@ -92,17 +92,54 @@ interval_policy_retained_compatibility_report_<run-id>.md
 interval_policy_retained_compatibility_manifest_<run-id>.json
 ```
 
-This scenario adapter retains its existing writer and manifest verifier. It is
-not a crash-atomic multi-file transaction, a concurrent-writer lock, or a
-cryptographic signature of trusted authorship. A manifest must be verified
-against all retained files before consumption; its existence alone does not
-prove semantic correctness or approval. Hashes detect mismatches against the
-supplied manifest, not malicious coordinated replacement of every input.
+This scenario adapter retains its existing writer. It is not a crash-atomic
+multi-file transaction, a concurrent-writer lock, or a cryptographic signature
+of trusted authorship. A manifest must be verified against all retained files
+before consumption; its existence alone does not prove semantic correctness or
+approval. Hashes detect inconsistent supplied evidence, not coordinated
+replacement of every input by an untrusted author.
 
 The unused **direct-engine** manifest schema was removed after the repository
 consumer scan found no Python references. It did not implement a manifest writer.
 The implemented **scenario-adapter** manifest schema remains and is versioned v2.
 Neither interface claims transactional publication across an entire output set.
+
+## Manifest verification contract
+
+`build_compatibility_manifest` and `verify_compatibility_manifest` enforce the
+same contract. Construction verifies the completed manifest before returning it;
+it cannot bind a supplied summary to different saved summary content.
+
+Verification requires the existing v2 JSON schema, a valid manifest digest,
+matching run and trend identities, and a timezone-aware assessment timestamp
+representing the same instant as the summary. Both complete policy snapshots
+must exactly match `compatibility_policy_candidates()` from the checked-out
+code, including non-target thresholds, candidate versions and metadata. A
+recomputed self-hash does not permit a changed or incomplete policy snapshot.
+Future policy changes therefore require explicit version/migration review; they
+must not reinterpret old evidence under silently altered defaults.
+
+There must be exactly one `slices`, `summary` and `report` entry, with distinct
+case-insensitive filenames in one artifact directory. Filenames are exact
+basenames, not paths: separators, whitespace aliases and control characters are
+rejected. Table artifacts use CSV or Parquet (`.pq` is also accepted), and the
+report uses `.md`. Empty files, symlink artifacts and non-regular files are
+rejected. The caller controls and must trust the artifact directory hierarchy;
+these checks are not a sandbox against hostile concurrent directory changes.
+
+The saved summary is parsed from the same byte snapshot used for its artifact
+hash. Its normalized semantic digest must equal the supplied summary digest.
+CSV identifiers remain text, duplicate CSV columns are rejected, and row ordering
+is normalized by the shared summary contract. Both CSV and Parquet summaries
+are supported. Other artifact hashes are streamed, rather than loading complete
+slice tables or reports into memory. The saved summary itself is held in memory
+for parsing; this is intended for bounded local assessment summaries.
+
+Verification reads files but does not rewrite them, rerun monitoring, or create
+a human review. It binds artifact bytes, the expected policy and the summary;
+it does **not** independently recompute all slice/report conclusions, establish
+authenticity of original source checks, or make publication atomic. The existing
+G39 review entry point calls this verifier before recording a decision.
 
 ## Validation and authority
 
@@ -111,6 +148,12 @@ retained-check engine. They cover historical-time invariance, actual observation
 weights, threshold edges, incomplete history, exact multi-area slices, conflicting
 source bindings, source immutability, CSV/Parquet output, legacy-version rejection,
 and the G39 review/ledger/annotation dependency chain.
+
+Manifest regressions are in `tests/test_interval_policy_manifest_binding.py`.
+They exercise rehashed policy changes, timestamp mismatches, unknown fields,
+duplicate roles, swapped artifacts, unsafe names, symlinks, empty artifacts,
+scattered directories, mismatched saved/supplied summaries, read-only CSV/Parquet
+round trips and downstream rejection of an invalid bundle.
 
 All side-effect fields remain false. The assessment does not rewrite historical
 statuses, mutate source evidence, rerun monitoring, activate thresholds, change
