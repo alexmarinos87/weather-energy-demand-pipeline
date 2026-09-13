@@ -88,7 +88,9 @@ def real_summary(shortfalls, run_count):
         part = template.copy()
         part["scenario"] = "mixed"
         part["resource_id"] = f"resource-{index}"
-        part["interval_run_id"] = [f"interval-{index}-{number}" for number in range(len(part))]
+        # Each retained run contains every slice and has one contiguous sequence.
+        part["history_sequence"] = range(1, len(part) + 1)
+        part["interval_run_id"] = [f"interval-mixed-{number}" for number in range(1, len(part) + 1)]
         part["empirical_coverage_pct"] = 90.0 - shortfall
         histories.append(part)
     history = pd.concat(histories, ignore_index=True)
