@@ -6,15 +6,11 @@ from typing import Any
 
 import pandas as pd
 
-from forecasting._interval_policy_candidate_revision_common import (
-    canonical,
-    digest,
-    utc_timestamp,
-)
+from forecasting._interval_policy_candidate_revision_common import canonical, digest, utc_timestamp
 from forecasting.interval_monitoring import PredictionIntervalMonitoringConfig
 from forecasting.interval_policy_sensitivity import PolicyCandidate, STATUSES
 
-COMPATIBILITY_CONTRACT_VERSION = "interval-policy-retained-compatibility-v1"
+COMPATIBILITY_CONTRACT_VERSION = "interval-policy-retained-compatibility-v2"
 COMPATIBILITY_RUN_ID_PATTERN = re.compile(r"^ipca-[0-9a-f]{24}$")
 PREVIOUS_POLICY_ID = "previous-five-point"
 CURRENT_POLICY_ID = "reviewed-three-point"
@@ -23,39 +19,22 @@ CURRENT_POLICY_ROLE = "current_reference"
 PREVIOUS_SHORTFALL_THRESHOLD = 5.0
 CURRENT_SHORTFALL_THRESHOLD = 3.0
 COMPATIBILITY_SAFETY_FIELDS = (
-    "historical_statuses_rewritten",
-    "retained_evidence_mutated",
-    "monitoring_rerun_performed",
-    "threshold_activation_performed",
-    "interval_recalibration_performed",
-    "model_change_performed",
-    "fabric_execution_performed",
-    "schedule_change_performed",
-    "promotion_change_performed",
-    "alert_delivery_performed",
-    "deployment_performed",
-    "external_publication_performed",
+    "historical_statuses_rewritten", "retained_evidence_mutated",
+    "monitoring_rerun_performed", "threshold_activation_performed",
+    "interval_recalibration_performed", "model_change_performed",
+    "fabric_execution_performed", "schedule_change_performed",
+    "promotion_change_performed", "alert_delivery_performed",
+    "deployment_performed", "external_publication_performed",
 )
 SUMMARY_REQUIRED_COLUMNS = {
-    "compatibility_run_id",
-    "compatibility_run_timestamp_utc",
-    "trend_run_id",
-    "scenario",
-    "retained_monitor_status",
-    "previous_policy_id",
-    "previous_policy_status",
-    "previous_shortfall_threshold_pct_points",
-    "current_policy_id",
-    "current_policy_status",
-    "current_shortfall_threshold_pct_points",
-    "slice_count",
-    "changed_slice_count",
-    "newly_failed_slice_count",
-    "compatibility_classification",
-    "retained_status_compatibility",
-    "human_review_required",
-    "compatibility_contract_version",
-    *COMPATIBILITY_SAFETY_FIELDS,
+    "compatibility_run_id", "compatibility_run_timestamp_utc", "trend_run_id",
+    "scenario", "retained_monitor_status", "previous_policy_id", "previous_policy_status",
+    "previous_shortfall_threshold_pct_points", "current_policy_id", "current_policy_status",
+    "current_shortfall_threshold_pct_points", "slice_count", "changed_slice_count",
+    "newly_failed_slice_count", "compatibility_classification", "retained_status_compatibility",
+    "human_review_required", "compatibility_contract_version",
+    "source_monitor_run_id", "source_monitor_as_of_utc", "source_health_checks_sha256",
+    "comparison_engine_contract_version", *COMPATIBILITY_SAFETY_FIELDS,
 }
 
 
@@ -63,30 +42,19 @@ class IntervalPolicyRetainedCompatibilityError(ValueError):
     """Raised when retained policy compatibility evidence is malformed or unsafe."""
 
 
-def _candidate(
-    candidate_id: str,
-    role: str,
-    version: str,
-    rationale: str,
-    config: PredictionIntervalMonitoringConfig,
-) -> PolicyCandidate:
+def _candidate(candidate_id: str, role: str, version: str, rationale: str,
+               config: PredictionIntervalMonitoringConfig) -> PolicyCandidate:
     return PolicyCandidate(
-        candidate_id=candidate_id,
-        candidate_role=role,
-        candidate_version=version,
-        rationale=rationale,
+        candidate_id=candidate_id, candidate_role=role,
+        candidate_version=version, rationale=rationale,
         min_recent_interval_runs=config.min_recent_interval_runs,
         min_reference_interval_runs=config.min_reference_interval_runs,
         max_interval_run_age_minutes=config.max_interval_run_age_minutes,
         max_evaluation_age_minutes=config.max_evaluation_age_minutes,
         min_calibration_observation_count=config.min_calibration_observation_count,
-        max_recent_coverage_shortfall_pct_points=(
-            config.max_recent_coverage_shortfall_pct_points
-        ),
+        max_recent_coverage_shortfall_pct_points=config.max_recent_coverage_shortfall_pct_points,
         max_coverage_drop_pct_points=config.max_coverage_drop_pct_points,
-        max_average_interval_width_increase_pct=(
-            config.max_average_interval_width_increase_pct
-        ),
+        max_average_interval_width_increase_pct=config.max_average_interval_width_increase_pct,
         max_calibration_history_drop_pct=config.max_calibration_history_drop_pct,
         source_policy_version=config.policy_version,
     )
@@ -104,30 +72,16 @@ def compatibility_policy_candidates() -> tuple[PolicyCandidate, PolicyCandidate]
     previous = PredictionIntervalMonitoringConfig(**previous_values)
     previous.validate()
     candidates = (
-        _candidate(
-            PREVIOUS_POLICY_ID,
-            "review_candidate",
-            "pre-g36-five-point-policy-v1",
-            "Previous five-point hard limit retained as historical reference.",
-            previous,
-        ),
-        _candidate(
-            CURRENT_POLICY_ID,
-            "active_reference",
-            "reviewed-three-point-policy-v1",
-            "Checked-in three-point hard limit used by future monitoring runs.",
-            current,
-        ),
+        _candidate(PREVIOUS_POLICY_ID, "review_candidate", "pre-g36-five-point-policy-v1",
+                   "Previous five-point hard limit retained as historical reference.", previous),
+        _candidate(CURRENT_POLICY_ID, "active_reference", "reviewed-three-point-policy-v1",
+                   "Checked-in three-point hard limit used by future monitoring runs.", current),
     )
     for candidate in candidates:
         candidate.validate()
     left, right = map(asdict, candidates)
     ignored = {"candidate_id", "candidate_role", "candidate_version", "rationale"}
-    changed = {
-        key
-        for key in left
-        if key not in ignored and canonical(left[key]) != canonical(right[key])
-    }
+    changed = {key for key in left if key not in ignored and canonical(left[key]) != canonical(right[key])}
     if changed != {"max_recent_coverage_shortfall_pct_points"}:
         raise IntervalPolicyRetainedCompatibilityError(
             "The compared policies must differ only in coverage shortfall."
@@ -138,13 +92,9 @@ def compatibility_policy_candidates() -> tuple[PolicyCandidate, PolicyCandidate]
 def _boolean(series: pd.Series, name: str) -> pd.Series:
     if series.dtype == bool:
         return series.astype(bool)
-    values = series.astype(str).str.strip().str.lower().map(
-        {"true": True, "false": False}
-    )
+    values = series.astype(str).str.strip().str.lower().map({"true": True, "false": False})
     if values.isna().any():
-        raise IntervalPolicyRetainedCompatibilityError(
-            f"{name} must contain boolean values."
-        )
+        raise IntervalPolicyRetainedCompatibilityError(f"{name} must contain boolean values.")
     return values.astype(bool)
 
 
@@ -154,87 +104,68 @@ def prepare_compatibility_summary(frame: pd.DataFrame) -> pd.DataFrame:
         raise IntervalPolicyRetainedCompatibilityError(
             "Compatibility summary is missing: " + ", ".join(missing) + "."
         )
+    if frame.empty:
+        raise IntervalPolicyRetainedCompatibilityError("Compatibility summary must not be empty.")
     prepared = frame.copy()
     text_columns = (
-        "compatibility_run_id",
-        "trend_run_id",
-        "scenario",
-        "retained_monitor_status",
-        "previous_policy_id",
-        "previous_policy_status",
-        "current_policy_id",
-        "current_policy_status",
-        "compatibility_classification",
-        "retained_status_compatibility",
-        "compatibility_contract_version",
+        "compatibility_run_id", "trend_run_id", "scenario", "retained_monitor_status",
+        "previous_policy_id", "previous_policy_status", "current_policy_id", "current_policy_status",
+        "compatibility_classification", "retained_status_compatibility", "compatibility_contract_version",
+        "source_monitor_run_id", "source_health_checks_sha256", "comparison_engine_contract_version",
     )
     for column in text_columns:
         prepared[column] = prepared[column].fillna("").astype(str).str.strip()
         if prepared[column].eq("").any():
-            raise IntervalPolicyRetainedCompatibilityError(
-                f"{column} must contain non-empty values."
-            )
-    prepared["compatibility_run_timestamp_utc"] = prepared[
-        "compatibility_run_timestamp_utc"
-    ].map(lambda value: utc_timestamp(value, "compatibility_run_timestamp_utc"))
+            raise IntervalPolicyRetainedCompatibilityError(f"{column} must contain non-empty values.")
+    for column in ("compatibility_run_timestamp_utc", "source_monitor_as_of_utc"):
+        prepared[column] = prepared[column].map(lambda value, name=column: utc_timestamp(value, name))
+    if prepared["compatibility_run_timestamp_utc"].nunique() != 1 or not (
+        prepared["source_monitor_as_of_utc"] <= prepared["compatibility_run_timestamp_utc"]
+    ).all():
+        raise IntervalPolicyRetainedCompatibilityError("Summary historical timestamp bindings are invalid.")
+    if not prepared["source_health_checks_sha256"].str.fullmatch(r"[0-9a-f]{64}").all() or (
+        prepared["source_health_checks_sha256"].nunique() != 1
+    ):
+        raise IntervalPolicyRetainedCompatibilityError("Exactly one valid source_health_checks_sha256 is required.")
+    if set(prepared["comparison_engine_contract_version"]) != {"interval-policy-compatibility-v1"}:
+        raise IntervalPolicyRetainedCompatibilityError("Canonical comparison engine contract is invalid.")
+    if prepared["source_monitor_run_id"].duplicated().any():
+        raise IntervalPolicyRetainedCompatibilityError("Each scenario must bind one distinct monitor run.")
     for column in ("slice_count", "changed_slice_count", "newly_failed_slice_count"):
         values = pd.to_numeric(prepared[column], errors="coerce")
         if values.isna().any() or (values < 0).any() or not (values % 1 == 0).all():
-            raise IntervalPolicyRetainedCompatibilityError(
-                f"{column} must contain non-negative integers."
-            )
+            raise IntervalPolicyRetainedCompatibilityError(f"{column} must contain non-negative integers.")
         prepared[column] = values.astype(int)
     if (prepared["slice_count"] < 1).any():
         raise IntervalPolicyRetainedCompatibilityError("slice_count must be positive.")
-    thresholds = (
-        ("previous_shortfall_threshold_pct_points", 5.0),
-        ("current_shortfall_threshold_pct_points", 3.0),
-    )
-    for column, expected in thresholds:
+    for column, expected in (("previous_shortfall_threshold_pct_points", 5.0),
+                             ("current_shortfall_threshold_pct_points", 3.0)):
         values = pd.to_numeric(prepared[column], errors="coerce").astype(float)
         if values.isna().any() or not (values == expected).all():
-            raise IntervalPolicyRetainedCompatibilityError(
-                f"{column} must remain {expected}."
-            )
+            raise IntervalPolicyRetainedCompatibilityError(f"{column} must remain {expected}.")
         prepared[column] = values
     for column in ("human_review_required", *COMPATIBILITY_SAFETY_FIELDS):
         prepared[column] = _boolean(prepared[column], column)
     if prepared[list(COMPATIBILITY_SAFETY_FIELDS)].any(axis=None):
-        raise IntervalPolicyRetainedCompatibilityError(
-            "Compatibility evidence contains enabled side-effect fields."
-        )
-    if prepared["compatibility_run_id"].nunique() != 1 or not (
-        COMPATIBILITY_RUN_ID_PATTERN.fullmatch(prepared["compatibility_run_id"].iloc[0])
+        raise IntervalPolicyRetainedCompatibilityError("Compatibility evidence contains enabled side-effect fields.")
+    if prepared["compatibility_run_id"].nunique() != 1 or not COMPATIBILITY_RUN_ID_PATTERN.fullmatch(
+        prepared["compatibility_run_id"].iloc[0]
     ):
-        raise IntervalPolicyRetainedCompatibilityError(
-            "Exactly one valid compatibility run is required."
-        )
+        raise IntervalPolicyRetainedCompatibilityError("Exactly one valid compatibility run is required.")
     if prepared["trend_run_id"].nunique() != 1:
-        raise IntervalPolicyRetainedCompatibilityError(
-            "Exactly one retained trend run is required."
-        )
+        raise IntervalPolicyRetainedCompatibilityError("Exactly one retained trend run is required.")
     if prepared["scenario"].duplicated().any():
-        raise IntervalPolicyRetainedCompatibilityError(
-            "Compatibility summary must contain one row per scenario."
-        )
-    for column in (
-        "retained_monitor_status",
-        "previous_policy_status",
-        "current_policy_status",
-    ):
+        raise IntervalPolicyRetainedCompatibilityError("Compatibility summary must contain one row per scenario.")
+    for column in ("retained_monitor_status", "previous_policy_status", "current_policy_status"):
         if not set(prepared[column]).issubset(STATUSES):
-            raise IntervalPolicyRetainedCompatibilityError(
-                f"{column} contains an unsupported status."
-            )
+            raise IntervalPolicyRetainedCompatibilityError(f"{column} contains an unsupported status.")
     if set(prepared["previous_policy_id"]) != {PREVIOUS_POLICY_ID}:
         raise IntervalPolicyRetainedCompatibilityError("previous_policy_id is invalid.")
     if set(prepared["current_policy_id"]) != {CURRENT_POLICY_ID}:
         raise IntervalPolicyRetainedCompatibilityError("current_policy_id is invalid.")
-    if set(prepared["compatibility_contract_version"]) != {
-        COMPATIBILITY_CONTRACT_VERSION
-    }:
+    if set(prepared["compatibility_contract_version"]) != {COMPATIBILITY_CONTRACT_VERSION}:
         raise IntervalPolicyRetainedCompatibilityError(
-            "Compatibility contract version is invalid."
+            "Compatibility contract version is invalid; legacy v1 evidence must not be relabelled as v2."
         )
     return prepared.sort_values("scenario").reset_index(drop=True)
 

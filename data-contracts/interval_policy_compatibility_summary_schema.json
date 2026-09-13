@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "interval_policy_compatibility_summary_v1",
+  "type": "object",
+  "required": [
+    "compatibility_run_id",
+    "compatibility_timestamp_utc",
+    "source_health_checks_sha256",
+    "source_monitor_run_id",
+    "previous_overall_status",
+    "current_overall_status",
+    "overall_status_changed",
+    "monitoring_slice_count",
+    "changed_monitoring_slice_count",
+    "newly_failed_slice_count",
+    "compatibility_classification",
+    "compatibility_contract_version"
+  ],
+  "properties": {
+    "compatibility_run_id": {"type": "string", "minLength": 1},
+    "compatibility_timestamp_utc": {"type": "string", "format": "date-time"},
+    "source_health_checks_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "source_monitor_run_id": {"type": "string", "minLength": 1},
+    "previous_overall_status": {"enum": ["healthy", "warning", "failed"]},
+    "current_overall_status": {"enum": ["healthy", "warning", "failed"]},
+    "overall_status_changed": {"type": "boolean"},
+    "monitoring_slice_count": {"type": "integer", "minimum": 1},
+    "changed_monitoring_slice_count": {"type": "integer", "minimum": 0},
+    "newly_failed_slice_count": {"type": "integer", "minimum": 0},
+    "compatibility_classification": {
+      "enum": [
+        "retained_conclusions_unchanged",
+        "policy_change_affects_retained_conclusions"
+      ]
+    },
+    "compatibility_contract_version": {"const": "interval-policy-compatibility-v1"}
+  },
+  "additionalProperties": true
+}
