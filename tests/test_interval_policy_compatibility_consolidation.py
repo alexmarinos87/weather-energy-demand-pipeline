@@ -228,6 +228,7 @@ def test_legacy_evaluator_import_callers_are_inventoried():
         "tests/test_interval_policy_retained_compatibility.py",
         "tests/test_interval_policy_retained_compatibility_review.py",
         "tests/test_interval_policy_compatibility_consolidation.py",
+        "tests/test_interval_policy_summary_consistency.py",
     }
     found = set()
     for directory in ("forecasting", "tests", "ingestion", "transformations", "fabric"):

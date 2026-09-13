@@ -99,6 +99,7 @@ def _boolean(series: pd.Series, name: str) -> pd.Series:
 
 
 def prepare_compatibility_summary(frame: pd.DataFrame) -> pd.DataFrame:
+    """Normalize structure and types; digest acceptance also checks relationships."""
     missing = sorted(SUMMARY_REQUIRED_COLUMNS - set(frame.columns))
     if missing:
         raise IntervalPolicyRetainedCompatibilityError(
@@ -132,6 +133,11 @@ def prepare_compatibility_summary(frame: pd.DataFrame) -> pd.DataFrame:
     if prepared["source_monitor_run_id"].duplicated().any():
         raise IntervalPolicyRetainedCompatibilityError("Each scenario must bind one distinct monitor run.")
     for column in ("slice_count", "changed_slice_count", "newly_failed_slice_count"):
+        # Reject before conversion, including when a caller normalizes before hashing.
+        if prepared[column].map(pd.api.types.is_bool).any():
+            raise IntervalPolicyRetainedCompatibilityError(
+                f"{column} must contain counts, not booleans."
+            )
         values = pd.to_numeric(prepared[column], errors="coerce")
         if values.isna().any() or (values < 0).any() or not (values % 1 == 0).all():
             raise IntervalPolicyRetainedCompatibilityError(f"{column} must contain non-negative integers.")
@@ -170,5 +176,51 @@ def prepare_compatibility_summary(frame: pd.DataFrame) -> pd.DataFrame:
     return prepared.sort_values("scenario").reset_index(drop=True)
 
 
+def _validate_summary_relationships(prepared: pd.DataFrame) -> None:
+    """Check consequences of the one fixed error-threshold tightening, not source observations."""
+    for row in prepared.itertuples(index=False):
+        def reject(reason: str) -> None:
+            raise IntervalPolicyRetainedCompatibilityError(
+                f"Compatibility summary digest is invalid for scenario {row.scenario!r}: {reason}"
+            )
+
+        total = int(row.slice_count)
+        changed = int(row.changed_slice_count)
+        newly_failed = int(row.newly_failed_slice_count)
+        previous, current = row.previous_policy_status, row.current_policy_status
+        retained = row.retained_monitor_status
+        if not (0 <= changed == newly_failed <= total):
+            reject("changed and newly-failed counts must agree and not exceed slice_count.")
+        if changed == 0 and previous != current:
+            reject("a scenario cannot change status without a changed slice.")
+        if changed > 0 and current != "failed":
+            reject("every changed slice becomes failed under the stricter error threshold.")
+        if previous == "failed" and changed == total:
+            reject("a previously failed scenario must retain at least one already-failed slice.")
+        if retained not in {previous, current}:
+            reject("the retained status must match one of the two source policy outcomes.")
+        if previous == current:
+            retained_label = "matches_both_policies"
+        elif retained == previous:
+            retained_label = "matches_previous_policy_only"
+        else:
+            retained_label = "matches_current_policy_only"
+        if row.retained_status_compatibility != retained_label:
+            reject("retained_status_compatibility contradicts the recorded statuses.")
+        classification = "fully_compatible"
+        if changed:
+            classification = (
+                "scenario_status_escalation" if previous != current
+                else "slice_change_without_scenario_change"
+            )
+        if row.compatibility_classification != classification:
+            reject("compatibility_classification contradicts slice or scenario changes.")
+        if bool(row.human_review_required) != (changed > 0):
+            reject("human_review_required must match whether slice conclusions change.")
+
+
 def compatibility_summary_sha256(frame: pd.DataFrame) -> str:
-    return digest(prepare_compatibility_summary(frame).to_dict(orient="records"))
+    """Hash only structurally valid, internally consistent summary evidence."""
+    prepared = prepare_compatibility_summary(frame)
+    _validate_summary_relationships(prepared)
+    return digest(prepared.to_dict(orient="records"))
