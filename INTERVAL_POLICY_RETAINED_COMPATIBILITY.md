@@ -1,84 +1,89 @@
-# Retained interval-policy compatibility assessment
+# Retained interval-policy compatibility: scenario adapter
 
-## Purpose
+## One comparison engine
 
-G38 compares the previous five-percentage-point recent coverage-shortfall limit
-with the reviewed three-point limit over one complete retained
-`interval-health-trend-v1` dataset.
+The canonical G38 engine is `assess_retained_policy_compatibility` in
+`forecasting/interval_policy_compatibility.py`. Its direct CLI and three-output
+contract are documented in [INTERVAL_POLICY_COMPATIBILITY.md](INTERVAL_POLICY_COMPATIBILITY.md).
 
-The assessment exists because G36 and G37 changed checked-in local and
-optional/manual Fabric defaults without rewriting historical monitoring rows.
-A retained status may therefore reflect the previous policy even though future
-runs use the reviewed policy.
+This module now adapts that engine's output to the scenario-oriented reporting
+and review interface. It is not an independent policy evaluator. The previous
+trend-only evaluator has been removed: it used latest-run rather than weighted
+recent coverage and re-aged historical observations at assessment time.
 
-## Input
+## Inputs and historical identity
 
-Supply one CSV or Parquet exact-slice trend dataset produced by the G25a trend
-builder. Every row must preserve:
+The adapter requires both the G25a `interval-health-trend-v1` slice trends and
+the matching original retained health checks. The checks must retain
+`monitor_as_of_utc`; the adapter will not substitute the trend timestamp, the
+assessment timestamp, or a guessed reference time.
 
-```text
-scenario
-source area
-resource
-city
-forecast horizon
-model
-feature contract
-target coverage
-interval contract
+Every scenario must bind one distinct `monitor_run_id`. The exact monitor/area/
+resource/city/horizon/model/feature-contract/coverage/interval-contract slice sets
+must match, with no dropped or extra slice. Latest interval identity, recent and
+reference counts, calibration history, weighted recent coverage, conditional
+drift values, and historical freshness ages must agree. Retained scenario status
+must reproduce the original checks under their original three- or five-point
+threshold.
+
+The original check table is the comparison authority. Both previous and current
+outcomes are delegated to the same engine. Only the reviewed coverage-shortfall
+threshold changes; non-target pass/fail outcomes and the original monitoring
+reference time remain fixed. Running an assessment a year later does not change
+those historical outcomes.
+
+For example, equal-size recent evaluations with coverage 78%, 90%, 90% at a 90%
+nominal target have weighted coverage 86% and shortfall four percentage points.
+The latest-only shortfall is zero and is not a valid replacement. Actual
+`evaluation_observation_count` weights are preserved by the canonical monitor.
+
+## Run
+
+```bash
+python -m forecasting.run_interval_policy_retained_compatibility \
+  --slice-trends data/interval-health-trends/slice_trends.csv \
+  --health-checks data/interval-health/prediction_interval_health_checks.csv \
+  --compatibility-run-timestamp 2026-09-13T15:00:00Z \
+  --output-dir data/interval-policy-retained-compatibility
 ```
 
-The retained dataset must contain one trend run, valid timezone-aware evidence,
-complete drift values only where reference history is sufficient, one canonical
-monitor status per scenario, and no duplicate exact-slice identities.
+Both input files must be retained evidence for the same scenarios and exact
+slices. The example paths are placeholders for those files, not generated
+credentials or live sources. CSV and Parquet are supported.
 
-## Policies compared
+The Python function retains its name and three-result return shape:
 
-The implementation builds both policies from the checked-in
-`PredictionIntervalMonitoringConfig` and fails closed unless the current hard
-limit is exactly three percentage points.
-
-```text
-previous-five-point
-    max_recent_coverage_shortfall_pct_points = 5.0
-
-reviewed-three-point
-    max_recent_coverage_shortfall_pct_points = 3.0
+```python
+slices, summary, report = evaluate_retained_policy_compatibility(
+    slice_trends,
+    retained_health_checks=original_checks,
+)
 ```
 
-Every other freshness, history, calibration, coverage-drift, width, and
-calibration-history threshold must be identical. A second policy difference is
-rejected.
+Omitting `retained_health_checks` raises a migration error. The CLI requires
+`--health-checks` before reading inputs or creating output directories.
 
-## Evaluation
+## Version and migration boundary
 
-Both candidates use the same rule semantics as the canonical policy-sensitivity
-evaluator:
+New scenario outputs use `interval-policy-retained-compatibility-v2`. The shared
+summary validator requires the original monitor run, original as-of timestamp,
+semantic source-check SHA-256 and canonical engine contract version. The summary
+digest binds these fields; the scenario manifest binds that digest and the exact
+output artifact bytes. The direct canonical engine remains
+`interval-policy-compatibility-v1`; it is a separate, unchanged contract.
 
-- minimum recent history;
-- interval-run freshness;
-- evaluation freshness;
-- minimum causal calibration history;
-- recent empirical-coverage shortfall;
-- minimum reference history; and
-- conditional coverage, width, and calibration-history drift warnings.
+Keep old v1 outputs unchanged. Do not edit their version field or reuse an old
+review as approval of a new assessment. Recreate a separate v2 assessment from
+original retained checks and obtain a separate human review where needed. If the
+original checks are unavailable, the scenario adapter cannot establish the
+historical comparison; it fails closed rather than fabricating them.
 
-The assessment retains the original `monitor_status` as historical evidence and
-calculates separate previous-policy and current-policy outcomes. It records:
+Public shared helper and manifest module names remain in place for downstream
+G39/G40/G41 consumers. Their source fixtures now use canonical monitoring
+outputs; production review/ledger/annotation decisions are not created or changed
+by this migration.
 
-```text
-fully_compatible
-slice_change_without_scenario_change
-scenario_status_escalation
-```
-
-It also states whether the retained scenario status matches both policies, only
-the previous policy, only the current policy, or neither policy.
-
-A three-point policy cannot de-escalate an outcome relative to the otherwise
-identical five-point policy. Any such result fails the assessment.
-
-## Outputs
+## Output and publication limits
 
 ```text
 interval_policy_retained_compatibility_slices_<run-id>.csv|parquet
@@ -87,38 +92,27 @@ interval_policy_retained_compatibility_report_<run-id>.md
 interval_policy_retained_compatibility_manifest_<run-id>.json
 ```
 
-The manifest binds the exact bytes of the slices, summary, and report, the
-summary digest, both complete policy snapshots, the retained trend-run identity,
-and the assessment timestamp. Existing outputs are never overwritten.
+This scenario adapter retains its existing writer and manifest verifier. It is
+not a crash-atomic multi-file transaction, a concurrent-writer lock, or a
+cryptographic signature of trusted authorship. A manifest must be verified
+against all retained files before consumption; its existence alone does not
+prove semantic correctness or approval. Hashes detect mismatches against the
+supplied manifest, not malicious coordinated replacement of every input.
 
-Run locally:
+The unused **direct-engine** manifest schema was removed after the repository
+consumer scan found no Python references. It did not implement a manifest writer.
+The implemented **scenario-adapter** manifest schema remains and is versioned v2.
+Neither interface claims transactional publication across an entire output set.
 
-```bash
-python3 -m forecasting.run_interval_policy_retained_compatibility \
-  --slice-trends data/interval-health-trends/slice_trends.csv \
-  --compatibility-run-timestamp 2026-09-01T13:30:00Z \
-  --output-dir data/interval-policy-retained-compatibility
-```
+## Validation and authority
 
-## Authority boundary
+Differential regressions compare the adapter with canonical monitoring and the
+retained-check engine. They cover historical-time invariance, actual observation
+weights, threshold edges, incomplete history, exact multi-area slices, conflicting
+source bindings, source immutability, CSV/Parquet output, legacy-version rejection,
+and the G39 review/ledger/annotation dependency chain.
 
-Every slice, summary, and manifest fixes the following to `false`:
-
-```text
-historical_statuses_rewritten
-retained_evidence_mutated
-monitoring_rerun_performed
-threshold_activation_performed
-interval_recalibration_performed
-model_change_performed
-fabric_execution_performed
-schedule_change_performed
-promotion_change_performed
-alert_delivery_performed
-deployment_performed
-external_publication_performed
-```
-
-The assessment does not update a historical status, run local or Fabric
-monitoring, activate a trigger, recalibrate an interval, change a model, deliver
-an alert, deploy, or publish externally.
+All side-effect fields remain false. The assessment does not rewrite historical
+statuses, mutate source evidence, rerun monitoring, activate thresholds, change
+intervals or models, execute Fabric, schedule a job, deliver an alert, deploy, or
+publish externally.

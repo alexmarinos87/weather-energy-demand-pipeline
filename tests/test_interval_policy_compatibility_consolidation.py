@@ -226,6 +226,7 @@ def test_legacy_evaluator_import_callers_are_inventoried():
     allowed = {
         "forecasting/run_interval_policy_retained_compatibility.py",
         "tests/test_interval_policy_retained_compatibility.py",
+        "tests/test_interval_policy_retained_compatibility_review.py",
         "tests/test_interval_policy_compatibility_consolidation.py",
     }
     found = set()

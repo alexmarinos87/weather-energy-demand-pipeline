@@ -1,5 +1,13 @@
 # Retained interval-policy compatibility
 
+## Canonical G38 route
+
+`forecasting.interval_policy_compatibility.assess_retained_policy_compatibility`
+is the single historical comparison engine. The optional scenario adapter in
+[INTERVAL_POLICY_RETAINED_COMPATIBILITY.md](INTERVAL_POLICY_RETAINED_COMPATIBILITY.md)
+delegates to it and additionally requires matching trend and original as-of
+bindings. It does not implement a second set of policy rules.
+
 ## Purpose
 
 This layer compares the previous five-percentage-point and reviewed
@@ -33,7 +41,8 @@ Every monitor run must have one timezone-aware monitoring timestamp. When the
 input also retains `monitor_as_of_utc`, it must be timezone-aware and consistent
 within each run, and it is included in the semantic source digest. The digest
 binds normalized required check fields and the optional as-of field, not the raw
-CSV/Parquet file bytes or free-text details.
+CSV/Parquet file bytes or free-text details. The scenario adapter requires the
+as-of field; this direct engine can preserve retained check outcomes without it.
 
 ## Comparison
 
@@ -93,21 +102,24 @@ overwriting write. Publication is **not a crash-atomic three-file transaction**:
 a process or host crash between publications can leave an incomplete set. There
 is no completion manifest in this writer; callers must not infer a complete run
 from the existence of one output file. Retain all three outputs together.
+The unused direct-engine manifest schema has been removed; its former existence
+was not evidence of an implemented completion-manifest contract.
 
 ## Regression coverage
 
 ```bash
 python -m pytest -q \
   tests/test_interval_policy_compatibility.py \
-  tests/test_interval_policy_compatibility_hardening.py
+  tests/test_interval_policy_compatibility_hardening.py \
+  tests/test_interval_policy_compatibility_consolidation.py
 ```
 
-The hardening fixtures consume actual canonical monitor output from synthetic
-interval history. They exercise missing identities, metadata and threshold
-changes, incomplete checks, chronology, safe IDs, assessment-time invariance,
-source immutability, CSV/Parquet round trips, output collisions, broken symlinks,
-serialization failure and competing publication. Full constrained CI remains
-required for acceptance.
+Fixtures consume actual canonical monitor output from synthetic interval history.
+They exercise missing identities, metadata and threshold changes, incomplete
+checks, chronology, safe IDs, assessment-time invariance, source immutability,
+weighted recent coverage, exact slices, CSV/Parquet round trips, output collisions,
+broken symlinks, serialization failure and competing publication. Full constrained
+CI remains required for acceptance.
 
 ## Authority boundary
 
