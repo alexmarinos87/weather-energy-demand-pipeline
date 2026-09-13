@@ -231,7 +231,8 @@ def test_legacy_evaluator_import_callers_are_inventoried():
     found = set()
     for directory in ("forecasting", "tests", "ingestion", "transformations", "fabric"):
         for path in (ROOT / directory).rglob("*.py"):
-            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
                 if isinstance(node, ast.ImportFrom) and node.module == (
                     "forecasting." + "interval_policy_retained_compatibility"
                 ):
