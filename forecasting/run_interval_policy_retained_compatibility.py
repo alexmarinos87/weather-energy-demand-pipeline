@@ -4,11 +4,8 @@ import argparse
 from pathlib import Path
 
 from forecasting.interval_policy_retained_compatibility import evaluate_retained_policy_compatibility
-from forecasting.interval_policy_retained_compatibility_manifest import (
-    build_compatibility_manifest,
-    write_json_atomic,
-)
-from forecasting.interval_policy_sensitivity import read_frame, write_frame_atomic, write_text_atomic
+from forecasting.interval_policy_compatibility_publication import write_retained_compatibility_bundle
+from forecasting.interval_policy_sensitivity import read_frame
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -38,29 +35,8 @@ def main(argv: list[str] | None = None) -> int:
         compatibility_run_id=args.compatibility_run_id,
         compatibility_run_timestamp=args.compatibility_run_timestamp,
     )
-    run_id = str(summary.iloc[0]["compatibility_run_id"])
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    suffix = ".csv" if args.output_format == "csv" else ".parquet"
-    outputs = {
-        "slices": write_frame_atomic(
-            slices,
-            args.output_dir / f"interval_policy_retained_compatibility_slices_{run_id}{suffix}",
-            args.output_format,
-        ),
-        "summary": write_frame_atomic(
-            summary,
-            args.output_dir / f"interval_policy_retained_compatibility_summary_{run_id}{suffix}",
-            args.output_format,
-        ),
-        "report": write_text_atomic(
-            report,
-            args.output_dir / f"interval_policy_retained_compatibility_report_{run_id}.md",
-        ),
-    }
-    manifest = build_compatibility_manifest(summary, artifacts=outputs)
-    outputs["manifest"] = write_json_atomic(
-        manifest,
-        args.output_dir / f"interval_policy_retained_compatibility_manifest_{run_id}.json",
+    outputs = write_retained_compatibility_bundle(
+        args.output_dir, slices, summary, report, output_format=args.output_format,
     )
     for name, path in outputs.items():
         print(f"Wrote {name}: {path}")

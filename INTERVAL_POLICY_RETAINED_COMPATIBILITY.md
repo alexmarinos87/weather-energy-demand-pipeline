@@ -92,12 +92,45 @@ interval_policy_retained_compatibility_report_<run-id>.md
 interval_policy_retained_compatibility_manifest_<run-id>.json
 ```
 
-This scenario adapter retains its existing writer. It is not a crash-atomic
-multi-file transaction, a concurrent-writer lock, or a cryptographic signature
-of trusted authorship. A manifest must be verified against all retained files
-before consumption; its existence alone does not prove semantic correctness or
-approval. Hashes detect inconsistent supplied evidence, not coordinated
-replacement of every input by an untrusted author.
+The scenario CLI calls `write_retained_compatibility_bundle` in
+`forecasting/interval_policy_compatibility_publication.py`. It keeps the existing
+arguments, filenames and valid v2 manifest shape. The writer expects the slices,
+summary and report returned together by the scenario evaluator; it does not
+independently recalculate arbitrary supplied slices or report text.
+
+Before serialization it checks all four final names, including dangling symlinks.
+It then writes exclusively into a unique private staging directory on the output
+filesystem. All data files are serialized and the manifest builder/verifier checks
+the staged bundle before any final filename is exposed. Complete files are
+published using no-replace hard links, with the verified manifest **last**. A
+concurrent destination collision fails rather than replacing the existing file.
+The CLI reports success only after publication returns successfully.
+
+On a serialization or verification failure, no final files are published. On an
+ordinary publication failure, cleanup removes only this invocation's file
+identities, not unrelated files or a replacement from another writer. Cleanup
+continues after an individual removal error and attaches diagnostic notes to the
+original exception. Filesystem permission or availability failures can prevent
+complete cleanup; inspect any such notes. A newly created output directory may
+remain empty after failure.
+
+This requires a local filesystem with hard-link support; unsupported filesystems
+fail without an overwriting fallback. No shared sensitivity/JSON writer is changed
+by this scenario-specific implementation. Existing evidence produced through
+older or other writer functions does not inherit this publication guarantee.
+
+This is **not a crash-atomic four-file transaction** or a power-loss durability
+guarantee. A process/host crash can leave partial, unmanifested files or a staging
+directory. There is no automatic stale-file cleanup or resume/overwrite mode.
+Preserve incomplete evidence for inspection; use a fresh run ID or output directory
+for a separate retry. Do not delete files just because a manifest is absent.
+
+Consumers must ignore private staging directories and must verify the final
+manifest against all three retained artifacts before consumption. Manifest
+existence alone is neither approval nor a substitute for verification. Hashes
+detect inconsistent supplied evidence, not coordinated replacement of every
+input by an untrusted author. The caller must trust the output directory hierarchy;
+this writer is not a lock or sandbox against hostile directory mutation.
 
 The unused **direct-engine** manifest schema was removed after the repository
 consumer scan found no Python references. It did not implement a manifest writer.
@@ -154,6 +187,13 @@ They exercise rehashed policy changes, timestamp mismatches, unknown fields,
 duplicate roles, swapped artifacts, unsafe names, symlinks, empty artifacts,
 scattered directories, mismatched saved/supplied summaries, read-only CSV/Parquet
 round trips and downstream rejection of an invalid bundle.
+
+Publication regressions are in `tests/test_interval_policy_publication.py`.
+They exercise the real CLI with canonical evidence, every output collision,
+dangling symlinks, CSV/Parquet serialization failures, manifest rejection,
+competing final-name publication, interrupted writes, replacement preservation,
+verification before publication and manifest-last ordering. Successful bundles
+retain the same four-output contract and do not change the source input files.
 
 All side-effect fields remain false. The assessment does not rewrite historical
 statuses, mutate source evidence, rerun monitoring, activate thresholds, change
