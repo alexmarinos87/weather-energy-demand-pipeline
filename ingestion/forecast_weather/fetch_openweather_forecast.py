@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -58,12 +59,15 @@ def load_config(config_path: Path | None = None) -> dict[str, Any]:
 
 
 def _positive_int(value: Any, name: str, *, maximum: int | None = None) -> int:
-    if isinstance(value, bool):
+    if isinstance(value, str) and re.fullmatch(r"\+?[0-9]+", value.strip()):
+        try:
+            parsed = int(value.strip())
+        except ValueError as exc:
+            raise ValueError(f"{name} must be a positive integer.") from exc
+    elif isinstance(value, int) and not isinstance(value, bool):
+        parsed = value
+    else:
         raise ValueError(f"{name} must be a positive integer.")
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{name} must be a positive integer.") from exc
     if parsed < 1 or (maximum is not None and parsed > maximum):
         suffix = f" no greater than {maximum}" if maximum is not None else ""
         raise ValueError(f"{name} must be a positive integer{suffix}.")
@@ -114,9 +118,14 @@ def resolve_endpoint(config: dict[str, Any]) -> str:
 
 
 def _utc_timestamp(value: datetime | None = None) -> datetime:
-    timestamp = value or datetime.now(timezone.utc)
-    if timestamp.tzinfo is None:
-        raise ValueError("retrieved_at_utc must be timezone-aware.")
+    timestamp = datetime.now(timezone.utc) if value is None else value
+    if (
+        not isinstance(timestamp, datetime)
+        or pd.isna(timestamp)
+        or timestamp.tzinfo is None
+        or timestamp.utcoffset() is None
+    ):
+        raise ValueError("retrieved_at_utc must be a timezone-aware datetime.")
     return timestamp.astimezone(timezone.utc)
 
 
@@ -216,6 +225,11 @@ def fetch_openweather_forecast(
         "api.max_forecast_records",
         maximum=MAX_PROVIDER_RECORDS,
     )
+    # Validate explicit evidence time before credentials/HTTP, but do not sample
+    # the default clock until the response is available.
+    supplied_retrieval = (
+        None if retrieved_at_utc is None else _utc_timestamp(retrieved_at_utc)
+    )
     api_key = get_api_key(config)
     response = request_get(
         endpoint,
@@ -238,7 +252,7 @@ def fetch_openweather_forecast(
         requested_count=requested_count,
     )
 
-    retrieved_at = _utc_timestamp(retrieved_at_utc)
+    retrieved_at = _utc_timestamp() if supplied_retrieval is None else supplied_retrieval
     enriched = attach_pipeline_metadata(
         payload,
         dataset_name="forecast_weather",
