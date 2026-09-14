@@ -1,4 +1,5 @@
 from copy import deepcopy
+import re
 from typing import Any, Callable
 
 import requests
@@ -13,12 +14,13 @@ RequestGet = Callable[..., Any]
 
 
 def _require_positive_int(value: Any, name: str) -> int:
-    if isinstance(value, bool):
+    # Do not silently truncate YAML floats or accept booleans as numeric bounds.
+    if isinstance(value, str) and re.fullmatch(r"\+?[0-9]+", value.strip()):
+        parsed = int(value.strip())
+    elif isinstance(value, int) and not isinstance(value, bool):
+        parsed = value
+    else:
         raise ValueError(f"{name} must be a positive integer.")
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{name} must be a positive integer.") from exc
     if parsed < 1:
         raise ValueError(f"{name} must be a positive integer.")
     return parsed
@@ -41,11 +43,11 @@ def fetch_ckan_resource(
     validate_page: PayloadValidator | None = None,
     request_get: RequestGet = requests.get,
 ) -> dict[str, Any]:
-    """Retrieve a deterministic, bounded CKAN DataStore snapshot.
+    """Retrieve a deterministic, bounded CKAN DataStore capture.
 
-    The first page fixes the snapshot target. Later rows appended by a live source
-    are left for the next run, while a shrinking source or non-deterministic page
-    order fails loudly rather than producing a partial raw capture.
+    The first page fixes the target count. Later appended rows are left for the
+    next run; shrinking totals, estimated totals and unordered pages fail loudly.
+    Offset pagination is not a transactionally frozen view of the remote source.
     """
     page_size = _require_positive_int(page_size, "page_size")
     max_records = _require_positive_int(max_records, "max_records")
@@ -53,6 +55,8 @@ def fetch_ckan_resource(
 
     request_params = dict(params)
     expected_resource_id = request_params.get("resource_id")
+    if not isinstance(expected_resource_id, str) or not expected_resource_id.strip():
+        raise ValueError("resource_id must be a non-empty string.")
     for controlled_parameter in ("limit", "offset", "sort"):
         request_params.pop(controlled_parameter, None)
 
@@ -95,13 +99,21 @@ def fetch_ckan_resource(
             raise CkanPaginationError("CKAN response must be a JSON object.")
         if validate_page is not None:
             validate_page(payload)
+        if payload.get("success") is not True:
+            raise CkanPaginationError("CKAN action success must be the boolean true.")
 
         result = payload.get("result")
         if not isinstance(result, dict):
             raise CkanPaginationError("CKAN response is missing result metadata.")
+        # Older responses may omit this flag; an explicit value must assert exactness.
+        if "total_was_estimated" in result and result["total_was_estimated"] is not False:
+            raise CkanPaginationError(
+                "CKAN result.total_was_estimated must be false when present; "
+                "an estimated total cannot establish capture completeness."
+            )
 
         resource_id = result.get("resource_id")
-        if expected_resource_id and resource_id != expected_resource_id:
+        if resource_id != expected_resource_id:
             raise CkanPaginationError(
                 f"CKAN returned resource_id={resource_id!r}; "
                 f"expected {expected_resource_id!r}."
