@@ -1,4 +1,3 @@
-import json
 import os
 import sys
 from datetime import datetime, timezone
@@ -13,6 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from ingestion.common.api_client import fetch_ckan_resource
 from ingestion.common.contract_validator import validate_payload
+from ingestion.common.raw_publication import write_raw_json
 from ingestion.common.source_area import attach_pipeline_metadata, validate_source_binding
 
 ENERGY_CONTRACT_PATH = PROJECT_ROOT / "data-contracts" / "energy_schema.json"
@@ -91,15 +91,11 @@ def fetch_energy(config: dict) -> dict:
 
 
 def save_raw_data(data: dict):
-    """Save raw energy JSON to a timestamped file."""
+    """Publish complete raw energy JSON without replacing existing evidence."""
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     output_dir = Path("data/raw/energy")
-    output_dir.mkdir(parents=True, exist_ok=True)
     file_path = output_dir / f"energy_{timestamp}.json"
-
-    with file_path.open("w", encoding="utf-8") as file_handle:
-        json.dump(data, file_handle, indent=2)
-
+    write_raw_json(data, file_path)
     print(f"Saved raw energy data to {file_path}")
 
 
