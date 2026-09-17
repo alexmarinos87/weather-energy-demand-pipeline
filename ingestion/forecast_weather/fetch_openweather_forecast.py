@@ -6,6 +6,7 @@ import os
 import re
 import sys
 from datetime import datetime, timezone
+from math import isfinite
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
@@ -280,6 +281,50 @@ def fetch_openweather_forecast(
     return enriched
 
 
+def _validate_retained_snapshot(
+    raw_payload: dict[str, Any], metadata: dict[str, Any]
+) -> None:
+    """Replay provider checks against retained evidence, never today's catalogue."""
+    proxy = metadata.get("weather_proxy_city")
+    parts = proxy.rsplit(",", 1) if isinstance(proxy, str) else []
+    if (
+        len(parts) != 2
+        or not all(part and part == part.strip() for part in parts)
+        or len(parts[1]) != 2
+        or not parts[1].isascii()
+        or not parts[1].isalpha()
+    ):
+        raise OpenWeatherForecastError(
+            "Raw weather_proxy_city must contain a nonempty city and two-letter country."
+        )
+    retained_binding = {"weather_proxy_city": proxy}
+    for name, limit in (("weather_proxy_latitude", 90.0), ("weather_proxy_longitude", 180.0)):
+        value = metadata.get(name)
+        if isinstance(value, bool):
+            raise OpenWeatherForecastError(f"Raw {name} must be a finite coordinate.")
+        try:
+            coordinate = float(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise OpenWeatherForecastError(f"Raw {name} must be a finite coordinate.") from exc
+        if not isfinite(coordinate) or not -limit <= coordinate <= limit:
+            raise OpenWeatherForecastError(f"Raw {name} must be finite and within +/-{limit}.")
+        retained_binding[name] = coordinate
+    requested = metadata.get("requested_record_count", MAX_PROVIDER_RECORDS)
+    if type(requested) is not int or not 1 <= requested <= MAX_PROVIDER_RECORDS:
+        raise OpenWeatherForecastError(
+            "Raw requested_record_count must be an integer from 1 to 40 when present."
+        )
+    if "returned_record_count" in metadata:
+        returned = metadata["returned_record_count"]
+        if type(returned) is not int or returned != len(raw_payload["list"]):
+            raise OpenWeatherForecastError(
+                "Raw returned_record_count must equal the retained forecast list length."
+            )
+    _validate_provider_snapshot(
+        raw_payload, binding=retained_binding, requested_count=requested
+    )
+
+
 def normalize_openweather_forecast(
     raw_payload: dict[str, Any],
 ) -> list[dict[str, Any]]:
@@ -305,6 +350,7 @@ def normalize_openweather_forecast(
             "Raw OpenWeather retrieved_at_utc must be timezone-aware."
         )
     retrieved_at = retrieved_at.tz_convert("UTC")
+    _validate_retained_snapshot(raw_payload, metadata)
 
     city = raw_payload["city"]
     city_identity = str(metadata["weather_proxy_city"]).rsplit(",", 1)[0]

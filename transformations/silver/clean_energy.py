@@ -8,8 +8,10 @@ import pandas as pd
 
 if __package__:
     from .deduplication import select_latest_records
+    from .publication import write_silver_partitions
 else:  # Preserve direct-script execution as well as python -m.
     from deduplication import select_latest_records
+    from publication import write_silver_partitions
 
 
 RAW_DIR = Path("data/raw/energy")
@@ -139,17 +141,16 @@ def transform_energy_files(raw_dir: Path = RAW_DIR) -> pd.DataFrame:
 
 
 def save_clean_data(df: pd.DataFrame, output_path: Path = SILVER_DIR):
-    """Write silver energy records partitioned by event_date_utc."""
+    """Publish complete silver energy partitions without replacing existing files."""
     if df.empty:
         print("No valid energy records to write.")
         return
 
     run_timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    for event_date, partition_df in df.groupby("event_date_utc", sort=True):
-        output_dir = output_path / f"dt={event_date}"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_file = output_dir / f"energy_clean_{run_timestamp}.parquet"
-        partition_df.to_parquet(output_file, index=False)
+    output_files = write_silver_partitions(
+        df, output_path, dataset="energy", run_timestamp=run_timestamp
+    )
+    for output_file in output_files:
         print(f"Saved cleaned energy data to {output_file}")
 
 
