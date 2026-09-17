@@ -35,22 +35,56 @@ def _coordinate(value: Any, name: str, *, minimum: float, maximum: float) -> flo
     return parsed
 
 
-@lru_cache(maxsize=8)
-def _load_contract(contract_path: str) -> dict[str, Any]:
-    path = Path(contract_path)
-    with path.open("r", encoding="utf-8") as file_handle:
-        contract = json.load(file_handle)
+def _contract_text(value: Any, name: str) -> str:
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise SourceAreaError(f"{name} must be non-empty, already-trimmed text.")
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise SourceAreaError(f"{name} must not contain control characters.")
+    return value
 
-    version = contract.get("contract_version")
+
+def _unique_members(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise SourceAreaError(f"Duplicate source-area JSON member: {key!r}.")
+        result[key] = value
+    return result
+
+
+def _reject_constant(value: str) -> Any:
+    raise SourceAreaError(f"Source-area JSON numbers must be finite, got {value}.")
+
+
+def _json_float(value: str) -> float:
+    parsed = float(value)
+    if not isfinite(parsed):
+        raise SourceAreaError("Source-area JSON numbers must be finite.")
+    return parsed
+
+
+@lru_cache(maxsize=8)
+def _parse_contract(content: str) -> dict[str, Any]:
+    """Cache validation of immutable decoded contents, never filesystem identity."""
+    try:
+        contract = json.loads(
+            content, object_pairs_hook=_unique_members,
+            parse_constant=_reject_constant, parse_float=_json_float,
+        )
+    except json.JSONDecodeError as exc:
+        raise SourceAreaError("source_areas.json must contain valid JSON.") from exc
+    if not isinstance(contract, dict):
+        raise SourceAreaError("source_areas.json must contain an object.")
+
+    _contract_text(contract.get("contract_version"), "contract_version")
     areas = contract.get("areas")
-    if not isinstance(version, str) or not version.strip():
-        raise SourceAreaError("source_areas.json must define contract_version.")
     if not isinstance(areas, dict) or not areas:
         raise SourceAreaError("source_areas.json must define at least one area.")
 
     resource_ids: set[str] = set()
     coordinates: set[tuple[float, float]] = set()
     for area_key, area in areas.items():
+        _contract_text(area_key, "source-area key")
         if normalize_source_area(area_key) != area_key:
             raise SourceAreaError(
                 f"Source-area key {area_key!r} must already be normalized."
@@ -69,7 +103,9 @@ def _load_contract(contract_path: str) -> dict[str, Any]:
             raise SourceAreaError(
                 f"Source-area {area_key!r} is missing: {', '.join(missing)}."
             )
-        resource_id = str(area["nged_resource_id"]).strip()
+        for field in ("display_name", "nged_resource_id", "weather_proxy_city"):
+            _contract_text(area[field], f"{area_key}.{field}")
+        resource_id = area["nged_resource_id"]
         if resource_id in resource_ids:
             raise SourceAreaError(
                 f"NGED resource ID {resource_id!r} is assigned more than once."
@@ -100,7 +136,9 @@ def _load_contract(contract_path: str) -> dict[str, Any]:
 def load_source_area_contract(
     contract_path: Path = SOURCE_AREAS_CONTRACT_PATH,
 ) -> dict[str, Any]:
-    return deepcopy(_load_contract(str(contract_path.resolve())))
+    # Always reopen: edits, deletion and read failures must not reuse stale rules.
+    content = Path(contract_path).read_text(encoding="utf-8")
+    return deepcopy(_parse_contract(content))
 
 
 def resolve_source_area(
