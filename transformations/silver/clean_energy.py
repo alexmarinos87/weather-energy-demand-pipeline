@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from stat import S_ISDIR
 from typing import Any
 
 import pandas as pd
@@ -58,10 +59,14 @@ def _build_records(
     source_file: str,
     ingestion_ts: datetime,
 ) -> list[dict[str, Any]]:
-    result = raw_json.get("result", {})
+    if not isinstance(raw_json, dict):
+        raise ValueError("Energy raw input must be a JSON object.")
+    result = raw_json.get("result")
+    if not isinstance(result, dict) or not isinstance(result.get("records"), list):
+        raise ValueError("Energy raw input must contain result.records as a list.")
     metadata = raw_json.get("_pipeline_metadata") or {}
     resource_id = result.get("resource_id")
-    records = result.get("records", [])
+    records = result["records"]
 
     cleaned: list[dict[str, Any]] = []
     for record in records:
@@ -92,9 +97,14 @@ def _build_records(
 
 
 def transform_energy_files(raw_dir: Path = RAW_DIR) -> pd.DataFrame:
-    """Transform energy raw JSON files to canonical silver schema."""
+    """Transform all selected raw files, or raise without returning a partial batch."""
+    raw_dir = Path(raw_dir)
+    if not S_ISDIR(raw_dir.stat().st_mode):
+        raise NotADirectoryError(f"Raw energy input must be a directory: {raw_dir}")
+    # Enumerate explicitly so a missing/unreadable directory is not an empty batch.
+    inputs = sorted(path for path in raw_dir.iterdir() if path.name.endswith(".json"))
     records: list[dict[str, Any]] = []
-    for filepath in sorted(raw_dir.glob("*.json")):
+    for filepath in inputs:
         try:
             with filepath.open("r", encoding="utf-8") as file_handle:
                 raw_data = json.load(file_handle)
@@ -106,7 +116,7 @@ def transform_energy_files(raw_dir: Path = RAW_DIR) -> pd.DataFrame:
                 )
             )
         except Exception as exc:
-            print(f"Failed to process {filepath.name}: {exc}")
+            raise ValueError(f"Failed to process {filepath.name}: {exc}") from exc
 
     if not records:
         return pd.DataFrame(columns=ENERGY_CANONICAL_COLUMNS)
