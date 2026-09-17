@@ -6,6 +6,11 @@ from typing import Any
 
 import pandas as pd
 
+if __package__:
+    from .deduplication import select_latest_records
+else:  # Preserve direct-script execution as well as python -m.
+    from deduplication import select_latest_records
+
 
 RAW_DIR = Path("data/raw/energy")
 SILVER_DIR = Path("data/silver/energy")
@@ -122,17 +127,15 @@ def transform_energy_files(raw_dir: Path = RAW_DIR) -> pd.DataFrame:
         return pd.DataFrame(columns=ENERGY_CANONICAL_COLUMNS)
 
     df = pd.DataFrame(records)[ENERGY_CANONICAL_COLUMNS]
-    df = df.sort_values("ingestion_timestamp_utc")
-    df = df.drop_duplicates(
-        subset=[
+    return select_latest_records(
+        df,
+        keys=[
             "source_area",
             "resource_id",
             "source_record_id",
             "event_timestamp_utc",
         ],
-        keep="last",
     )
-    return df.reset_index(drop=True)
 
 
 def save_clean_data(df: pd.DataFrame, output_path: Path = SILVER_DIR):

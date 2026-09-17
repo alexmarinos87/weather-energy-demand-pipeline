@@ -6,6 +6,11 @@ from typing import Any
 
 import pandas as pd
 
+if __package__:
+    from .deduplication import select_latest_records
+else:  # Preserve direct-script execution as well as python -m.
+    from deduplication import select_latest_records
+
 
 RAW_DIR = Path("data/raw/weather")
 SILVER_DIR = Path("data/silver/weather")
@@ -109,12 +114,9 @@ def transform_weather_files(raw_dir: Path = RAW_DIR) -> pd.DataFrame:
         return pd.DataFrame(columns=WEATHER_CANONICAL_COLUMNS)
 
     df = pd.DataFrame(records)[WEATHER_CANONICAL_COLUMNS]
-    df = df.sort_values("ingestion_timestamp_utc")
-    df = df.drop_duplicates(
-        subset=["source_area", "city", "event_timestamp_utc"],
-        keep="last",
+    return select_latest_records(
+        df, keys=["source_area", "city", "event_timestamp_utc"]
     )
-    return df.reset_index(drop=True)
 
 
 def save_clean_data(df: pd.DataFrame, output_path: Path = SILVER_DIR):
