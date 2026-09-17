@@ -51,15 +51,20 @@ def resolve_binding(config: dict) -> dict[str, str]:
 
 
 def fetch_weather(config):
-    """Fetch current weather for the configured licence-area proxy city."""
+    """Fetch metric current weather for the configured licence-area proxy city."""
     binding = resolve_binding(config)
+    units = config["api"].get("units")
+    if not isinstance(units, str) or units.strip().lower() != "metric":
+        raise ValueError(
+            "api.units must be metric because silver uses Celsius and metres per second."
+        )
     url = f"{config['api']['base_url'].rstrip('/')}/weather"
     api_key = get_api_key(config)
 
     params = {
         "q": config["api"]["city"],
         "appid": api_key,
-        "units": config["api"]["units"],
+        "units": "metric",
     }
 
     response = requests.get(url, params=params, timeout=30)
