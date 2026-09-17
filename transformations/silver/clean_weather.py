@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from stat import S_ISDIR
 from typing import Any
 
 import pandas as pd
@@ -50,6 +51,8 @@ def _build_record(
     source_file: str,
     ingestion_ts: datetime,
 ) -> dict[str, Any]:
+    if not isinstance(raw_json, dict):
+        raise ValueError("Weather raw input must be a JSON object.")
     weather_summary = raw_json.get("weather", [{}])[0] or {}
     metadata = raw_json.get("_pipeline_metadata") or {}
     event_ts = pd.to_datetime(raw_json["dt"], unit="s", utc=True)
@@ -81,9 +84,14 @@ def _build_record(
 
 
 def transform_weather_files(raw_dir: Path = RAW_DIR) -> pd.DataFrame:
-    """Transform weather raw JSON files to canonical silver schema."""
+    """Transform all selected raw files, or raise without returning a partial batch."""
+    raw_dir = Path(raw_dir)
+    if not S_ISDIR(raw_dir.stat().st_mode):
+        raise NotADirectoryError(f"Raw weather input must be a directory: {raw_dir}")
+    # Enumerate explicitly so a missing/unreadable directory is not an empty batch.
+    inputs = sorted(path for path in raw_dir.iterdir() if path.name.endswith(".json"))
     records: list[dict[str, Any]] = []
-    for filepath in sorted(raw_dir.glob("*.json")):
+    for filepath in inputs:
         try:
             with filepath.open("r", encoding="utf-8") as file_handle:
                 raw_data = json.load(file_handle)
@@ -95,7 +103,7 @@ def transform_weather_files(raw_dir: Path = RAW_DIR) -> pd.DataFrame:
                 )
             )
         except Exception as exc:
-            print(f"Failed to process {filepath.name}: {exc}")
+            raise ValueError(f"Failed to process {filepath.name}: {exc}") from exc
 
     if not records:
         return pd.DataFrame(columns=WEATHER_CANONICAL_COLUMNS)
