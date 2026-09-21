@@ -5,6 +5,7 @@ import json
 import os
 import sys
 from datetime import datetime, timezone
+from math import isfinite
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
@@ -143,6 +144,28 @@ def _snapshot_id(
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _require_finite_forecast_measurements(payload: dict[str, Any]) -> None:
+    """Check schema-validated numeric fields before comparisons or slot filtering."""
+    measurements = [
+        (f"city.coord.{axis}", payload["city"]["coord"][axis])
+        for axis in ("lat", "lon")
+    ]
+    for index, record in enumerate(payload["list"]):
+        measurements.extend(
+            (f"list[{index}].main.{field}", record["main"][field])
+            for field in ("temp", "humidity")
+        )
+    for path, value in measurements:
+        try:
+            finite = isfinite(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise OpenWeatherForecastError(
+                f"OpenWeather {path} must be finite and representable as a float."
+            ) from exc
+        if not finite:
+            raise OpenWeatherForecastError(f"OpenWeather {path} must be finite.")
+
+
 def _validate_provider_snapshot(
     payload: dict[str, Any],
     *,
@@ -150,6 +173,7 @@ def _validate_provider_snapshot(
     requested_count: int,
 ) -> None:
     validate_payload(payload, RAW_CONTRACT_PATH, "OpenWeather forecast")
+    _require_finite_forecast_measurements(payload)
     forecasts = payload["list"]
     returned_count = payload["cnt"]
     if returned_count != len(forecasts):
@@ -271,6 +295,7 @@ def normalize_openweather_forecast(
 ) -> list[dict[str, Any]]:
     """Normalize future forecast slots into the provider-neutral contract."""
     validate_payload(raw_payload, RAW_CONTRACT_PATH, "OpenWeather forecast")
+    _require_finite_forecast_measurements(raw_payload)
     metadata = raw_payload.get("_pipeline_metadata")
     if not isinstance(metadata, dict):
         raise OpenWeatherForecastError(
