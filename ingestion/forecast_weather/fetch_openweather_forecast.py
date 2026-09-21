@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,6 +19,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from ingestion.common.contract_validator import validate_payload
+from ingestion.forecast_weather.publication import publish_new_file
 from ingestion.common.source_area import attach_pipeline_metadata, validate_source_binding
 
 RAW_CONTRACT_PATH = (
@@ -342,22 +344,38 @@ def _output_root(
     return Path(value)
 
 
+def _snapshot_output_identity(snapshot_id: object, retrieved_at: object) -> tuple[str, pd.Timestamp]:
+    """Validate filename inputs without consulting credentials or today's catalogue."""
+    if not isinstance(snapshot_id, str) or re.fullmatch(r"[0-9a-f]{64}", snapshot_id) is None:
+        raise OpenWeatherForecastError("raw_snapshot_id must be 64 lowercase hexadecimal characters.")
+    try:
+        timestamp = pd.Timestamp(retrieved_at)
+        if pd.isna(timestamp) or timestamp.tzinfo is None:
+            raise ValueError("Missing or timezone-naive retrieval time")
+        timestamp = timestamp.tz_convert("UTC")
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise OpenWeatherForecastError(
+            "Forecast retrieval time must be a non-missing timezone-aware timestamp."
+        ) from exc
+    return snapshot_id, timestamp
+
+
 def save_raw_snapshot(
     raw_payload: dict[str, Any],
     *,
     output_root: Path,
 ) -> Path:
     metadata = raw_payload["_pipeline_metadata"]
-    retrieved_at = pd.Timestamp(metadata["retrieved_at_utc"])
-    partition = output_root / f"ingestion_date={retrieved_at:%Y-%m-%d}"
-    partition.mkdir(parents=True, exist_ok=True)
-    file_path = partition / (
-        f"openweather_forecast_{retrieved_at:%Y%m%d_%H%M%S}_"
-        f"{metadata['raw_snapshot_id'][:12]}.json"
+    snapshot_id, retrieved_at = _snapshot_output_identity(
+        metadata.get("raw_snapshot_id"), metadata.get("retrieved_at_utc")
     )
-    with file_path.open("x", encoding="utf-8") as file_handle:
-        json.dump(raw_payload, file_handle, indent=2, sort_keys=True)
-    return file_path
+    partition = output_root / f"ingestion_date={retrieved_at:%Y-%m-%d}"
+    file_path = partition / (
+        f"openweather_forecast_{retrieved_at:%Y%m%d_%H%M%S}_{snapshot_id[:12]}.json"
+    )
+    # Serialize before creating filesystem output; preserve established formatting.
+    encoded = json.dumps(raw_payload, indent=2, sort_keys=True, allow_nan=False).encode("utf-8")
+    return publish_new_file(file_path, lambda handle: handle.write(encoded))
 
 
 def save_normalized_forecast(
@@ -367,22 +385,21 @@ def save_normalized_forecast(
 ) -> Path:
     if not records:
         raise OpenWeatherForecastError("No normalized forecast records to save.")
-    retrieved_at = pd.Timestamp(records[0]["forecast_retrieved_at_utc"])
-    snapshot_id = str(records[0]["raw_snapshot_id"])
-    if any(str(record["raw_snapshot_id"]) != snapshot_id for record in records):
-        raise OpenWeatherForecastError(
-            "Normalized records must belong to one raw snapshot."
+    snapshot_id, retrieved_at = _snapshot_output_identity(
+        records[0].get("raw_snapshot_id"), records[0].get("forecast_retrieved_at_utc")
+    )
+    for record in records:
+        record_id, record_time = _snapshot_output_identity(
+            record.get("raw_snapshot_id"), record.get("forecast_retrieved_at_utc")
         )
+        if record_id != snapshot_id:
+            raise OpenWeatherForecastError("Normalized records must belong to one raw snapshot.")
+        if record_time != retrieved_at:
+            raise OpenWeatherForecastError("Normalized records must share one retrieval time.")
     partition = output_root / f"ingestion_date={retrieved_at:%Y-%m-%d}"
-    partition.mkdir(parents=True, exist_ok=True)
     file_path = partition / (
         f"forecast_weather_{retrieved_at:%Y%m%d_%H%M%S}_{snapshot_id[:12]}.parquet"
     )
-    if file_path.exists():
-        raise FileExistsError(f"Refusing to overwrite {file_path}.")
-    temp_path = file_path.with_suffix(".tmp.parquet")
-    if temp_path.exists():
-        raise FileExistsError(f"Temporary output already exists: {temp_path}.")
     frame = pd.DataFrame(records)
     timestamp_columns = [
         "forecast_issued_at_utc",
@@ -392,9 +409,7 @@ def save_normalized_forecast(
     ]
     for column in timestamp_columns:
         frame[column] = pd.to_datetime(frame[column], utc=True, errors="raise")
-    frame.to_parquet(temp_path, index=False)
-    temp_path.replace(file_path)
-    return file_path
+    return publish_new_file(file_path, lambda handle: frame.to_parquet(handle, index=False))
 
 
 def main() -> None:
