@@ -1,12 +1,40 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from math import sqrt
+from math import isfinite, sqrt
 from typing import Iterable, Sequence
 
 import pandas as pd
 
 from forecasting.contracts import ForecastingContractError, TARGET_COLUMN
+
+
+def _finite_score_value(value: object, context: str) -> float:
+    if pd.api.types.is_bool(value):
+        raise ForecastingContractError(f"{context} must be a finite number, not a boolean.")
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ForecastingContractError(f"{context} must be a finite float-representable number.") from exc
+    if not isfinite(number):
+        raise ForecastingContractError(f"{context} must be finite.")
+    return number
+
+
+def _score_vector(values: Sequence[float], width: int, name: str) -> tuple[float, ...]:
+    if isinstance(values, (str, bytes, bytearray, Mapping)):
+        raise ForecastingContractError(f"Ridge model {name} must be a numeric vector.")
+    try:
+        count = len(values)
+    except TypeError as exc:
+        raise ForecastingContractError(f"Ridge model {name} must be a numeric vector.") from exc
+    if count != width:
+        raise ForecastingContractError(
+            f"Ridge model {name} has {count} values; expected {width}."
+        )
+    return tuple(_finite_score_value(value, f"Ridge model {name}[{index}]")
+                 for index, value in enumerate(values))
 
 
 @dataclass(frozen=True)
@@ -18,19 +46,38 @@ class RidgeModel:
     alpha: float
 
     def predict(self, rows: Iterable[Sequence[float]]) -> list[float]:
+        width = len(self.feature_columns)
+        means = _score_vector(self.means, width, "means")
+        scales = _score_vector(self.scales, width, "scales")
+        coefficients = _score_vector(self.coefficients, width + 1, "coefficients")
+        if any(scale <= 0 for scale in scales):
+            raise ForecastingContractError("Ridge model scales must be positive and finite.")
         predictions: list[float] = []
-        for row in rows:
-            standardized = [
-                (float(value) - mean) / scale
-                for value, mean, scale in zip(row, self.means, self.scales)
-            ]
-            prediction = self.coefficients[0] + sum(
-                coefficient * value
-                for coefficient, value in zip(
-                    self.coefficients[1:], standardized
+        for row_index, row in enumerate(rows):
+            if isinstance(row, (str, bytes, bytearray, Mapping)):
+                raise ForecastingContractError(
+                    f"Prediction row {row_index} must be an ordered feature sequence."
                 )
+            try:
+                values = tuple(row)
+            except TypeError as exc:
+                raise ForecastingContractError(
+                    f"Prediction row {row_index} must be an ordered feature sequence."
+                ) from exc
+            if len(values) != width:
+                raise ForecastingContractError(
+                    f"Prediction row {row_index} has {len(values)} features; expected {width}."
+                )
+            standardized: list[float] = []
+            for column, value, mean, scale in zip(self.feature_columns, values, means, scales):
+                context = f"Prediction row {row_index} feature {column}"
+                number = _finite_score_value(value, context)
+                standardized.append(_finite_score_value((number - mean) / scale, context))
+            prediction = coefficients[0] + sum(
+                coefficient * value
+                for coefficient, value in zip(coefficients[1:], standardized)
             )
-            predictions.append(float(prediction))
+            predictions.append(_finite_score_value(prediction, f"Prediction row {row_index} result"))
         return predictions
 
 
