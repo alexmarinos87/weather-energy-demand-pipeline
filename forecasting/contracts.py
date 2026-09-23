@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
+from numbers import Integral, Real
 
 import pandas as pd
 
@@ -48,6 +49,17 @@ class ForecastingContractError(ValueError):
     """Raised when feature data cannot support a leakage-safe backtest."""
 
 
+def _require_finite_real_setting(value: object, name: str) -> None:
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise ForecastingContractError(f"{name} must be a finite real number, not a boolean or string.")
+    try:
+        finite = isfinite(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ForecastingContractError(f"{name} must be a finite float-representable real number.") from exc
+    if not finite:
+        raise ForecastingContractError(f"{name} must be finite.")
+
+
 @dataclass(frozen=True)
 class BacktestConfig:
     train_fraction: float = 0.60
@@ -63,6 +75,8 @@ class BacktestConfig:
     feature_contract_version: str = UTC_FEATURE_CONTRACT_VERSION
 
     def validate(self) -> None:
+        for name in ("train_fraction", "validation_fraction", "ridge_alpha", "min_target_coverage"):
+            _require_finite_real_setting(getattr(self, name), name)
         if not 0 < self.train_fraction < 1:
             raise ForecastingContractError("train_fraction must be between 0 and 1.")
         if not 0 < self.validation_fraction < 1:
@@ -74,8 +88,9 @@ class BacktestConfig:
                 "train_fraction + validation_fraction must leave a test split."
             )
         for name in ("min_train_rows", "min_validation_rows", "min_test_rows"):
-            if getattr(self, name) < 1:
-                raise ForecastingContractError(f"{name} must be at least 1.")
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, Integral) or value < 1:
+                raise ForecastingContractError(f"{name} must be a positive integer (at least 1).")
         if self.ridge_alpha <= 0:
             raise ForecastingContractError("ridge_alpha must be positive.")
         if not self.horizon_minutes:
