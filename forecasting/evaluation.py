@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from math import sqrt
+from math import isfinite, sqrt
 from typing import Sequence
 from uuid import uuid4
 
@@ -77,6 +77,24 @@ METRIC_COLUMNS = [
 ]
 
 
+def _finite_evaluation_value(value: object, context: str) -> float:
+    if (
+        not pd.api.types.is_scalar(value)
+        or pd.api.types.is_bool(value)
+        or isinstance(value, complex)
+    ):
+        raise ForecastingContractError(f"{context} must be a finite real scalar.")
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ForecastingContractError(
+            f"{context} must be a finite float-representable number."
+        ) from exc
+    if not isfinite(number):
+        raise ForecastingContractError(f"{context} must be finite.")
+    return number
+
+
 def _prediction_rows(
     evaluation: pd.DataFrame,
     *,
@@ -94,11 +112,19 @@ def _prediction_rows(
             "Prediction count does not match the evaluation row count."
         )
     rows: list[dict[str, object]] = []
-    for source_row, prediction in zip(
+    for position, (source_row, prediction) in enumerate(zip(
         evaluation.itertuples(index=False), predicted_values
-    ):
-        actual = float(getattr(source_row, SUPERVISED_TARGET_COLUMN))
-        error = float(prediction) - actual
+    )):
+        context = f"Evaluation {model_name}/{split} row {position}"
+        actual = _finite_evaluation_value(
+            getattr(source_row, SUPERVISED_TARGET_COLUMN), f"{context} actual_demand_mw"
+        )
+        current = _finite_evaluation_value(
+            getattr(source_row, TARGET_COLUMN), f"{context} current_demand_mw"
+        )
+        prediction = _finite_evaluation_value(prediction, f"{context} predicted_demand_mw")
+        error = _finite_evaluation_value(prediction - actual, f"{context} residual")
+        squared_error = _finite_evaluation_value(error * error, f"{context} squared_error_mw2")
         rows.append(
             {
                 "run_id": run_id,
@@ -117,11 +143,11 @@ def _prediction_rows(
                 TARGET_DELAY_COLUMN: float(getattr(source_row, TARGET_DELAY_COLUMN)),
                 "split": split,
                 "model_name": model_name,
-                "current_demand_mw": float(getattr(source_row, TARGET_COLUMN)),
+                "current_demand_mw": current,
                 "actual_demand_mw": actual,
-                "predicted_demand_mw": float(prediction),
+                "predicted_demand_mw": prediction,
                 "absolute_error_mw": abs(error),
-                "squared_error_mw2": error * error,
+                "squared_error_mw2": squared_error,
                 "trained_through_utc": trained_through,
                 "feature_contract_version": config.feature_contract_version,
             }
@@ -130,17 +156,31 @@ def _prediction_rows(
 
 
 def _metric_row(group: pd.DataFrame, supervised_group: pd.DataFrame) -> dict[str, object]:
-    errors = group["predicted_demand_mw"] - group["actual_demand_mw"]
-    nonzero = group["actual_demand_mw"].abs() > 1e-12
+    if group.empty or supervised_group.empty:
+        raise ForecastingContractError("Cannot calculate evaluation metrics for an empty group.")
+    # Validate before pandas reductions, which otherwise skip missing observations.
+    actual = group["actual_demand_mw"].map(
+        lambda value: _finite_evaluation_value(value, "Evaluation actual_demand_mw")
+    )
+    predicted = group["predicted_demand_mw"].map(
+        lambda value: _finite_evaluation_value(value, "Evaluation predicted_demand_mw")
+    )
+    errors = (predicted - actual).map(
+        lambda value: _finite_evaluation_value(value, "Evaluation residual")
+    )
+    squared_errors = (errors * errors).map(
+        lambda value: _finite_evaluation_value(value, "Evaluation squared_error_mw2")
+    )
+    nonzero = actual.abs() > 1e-12
     mape = None
     if nonzero.any():
-        mape = float(
-            (
-                errors[nonzero].abs()
-                / group.loc[nonzero, "actual_demand_mw"].abs()
-            ).mean()
-            * 100
+        mape = _finite_evaluation_value(
+            (errors[nonzero].abs() / actual.loc[nonzero].abs()).mean() * 100,
+            "Evaluation mape_pct",
         )
+    mae = _finite_evaluation_value(errors.abs().mean(), "Evaluation mae_mw")
+    rmse = _finite_evaluation_value(sqrt(squared_errors.mean()), "Evaluation rmse_mw")
+    bias = _finite_evaluation_value(errors.mean(), "Evaluation bias_mw")
     first = group.iloc[0]
     source_first = supervised_group.iloc[0]
     return {
@@ -161,10 +201,10 @@ def _metric_row(group: pd.DataFrame, supervised_group: pd.DataFrame) -> dict[str
         "horizon_minutes_avg": float(group["horizon_minutes"].mean()),
         "target_delay_minutes_avg": float(group[TARGET_DELAY_COLUMN].mean()),
         "target_delay_minutes_max": float(group[TARGET_DELAY_COLUMN].max()),
-        "mae_mw": float(errors.abs().mean()),
-        "rmse_mw": float(sqrt((errors * errors).mean())),
+        "mae_mw": mae,
+        "rmse_mw": rmse,
         "mape_pct": mape,
-        "bias_mw": float(errors.mean()),
+        "bias_mw": bias,
         "trained_through_utc": first["trained_through_utc"],
         "evaluation_feature_start_utc": group[FEATURE_TIMESTAMP_COLUMN].min(),
         "evaluation_feature_end_utc": group[FEATURE_TIMESTAMP_COLUMN].max(),
